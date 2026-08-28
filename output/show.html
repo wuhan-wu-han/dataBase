@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>智能制造工业设备监控大屏 - 离线演示版</title>
+    <script src="echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #060d1f;
+            color: #d4e3f5;
+            font-family: 'Microsoft YaHei', 'PingFang SC', Arial, sans-serif;
+            overflow: hidden;
+        }
+        .screen-container {
+            display: grid;
+            grid-template-columns: 260px 1fr 280px;
+            grid-template-rows: 60px 90px 260px 300px 180px;
+            gap: 10px;
+            padding: 10px;
+            width: 100vw;
+            height: 100vh;
+        }
+        .panel {
+            background: linear-gradient(135deg, rgba(13, 30, 60, 0.9), rgba(8, 18, 40, 0.95));
+            border: 1px solid rgba(64, 159, 255, 0.25);
+            border-radius: 6px;
+            box-shadow: 0 0 15px rgba(64, 159, 255, 0.12) inset;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 14px; height: 14px;
+            border-top: 2px solid #00d4ff;
+            border-left: 2px solid #00d4ff;
+        }
+        .panel::after {
+            content: '';
+            position: absolute;
+            bottom: 0; right: 0;
+            width: 14px; height: 14px;
+            border-bottom: 2px solid #00d4ff;
+            border-right: 2px solid #00d4ff;
+        }
+        .panel-title {
+            height: 32px;
+            line-height: 32px;
+            padding: 0 12px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #00d4ff;
+            background: linear-gradient(90deg, rgba(0, 212, 255, 0.18), transparent);
+            border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .panel-title .dot {
+            display: inline-block;
+            width: 6px; height: 6px;
+            background: #00d4ff;
+            border-radius: 50%;
+            margin-right: 8px;
+            box-shadow: 0 0 6px #00d4ff;
+            animation: blink 1.5s infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .panel-body {
+            flex: 1;
+            padding: 8px;
+            overflow: hidden;
+        }
+        .header-bar {
+            grid-column: 1 / 4;
+            grid-row: 1;
+            background: linear-gradient(90deg, rgba(0, 50, 100, 0.4), rgba(0, 100, 200, 0.3), rgba(0, 50, 100, 0.4));
+            border: 1px solid rgba(0, 212, 255, 0.4);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            position: relative;
+            border-radius: 6px;
+        }
+        .header-title {
+            font-size: 26px;
+            font-weight: bold;
+            color: #00d4ff;
+            letter-spacing: 4px;
+            text-shadow: 0 0 12px rgba(0, 212, 255, 0.6);
+            flex: 0 0 auto;
+        }
+        .header-title .subtitle {
+            font-size: 12px;
+            color: #8db8e0;
+            letter-spacing: 2px;
+            margin-left: 12px;
+            font-weight: normal;
+        }
+        .header-info {
+            flex: 1;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 24px;
+            font-size: 14px;
+        }
+        .header-info .info-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #8db8e0;
+        }
+        .header-info .info-item .val {
+            color: #00d4ff;
+            font-weight: bold;
+        }
+        .kpi-bar {
+            grid-column: 1 / 4;
+            grid-row: 2;
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 8px;
+        }
+        .kpi-card {
+            background: linear-gradient(135deg, rgba(13, 30, 60, 0.9), rgba(8, 18, 40, 0.95));
+            border: 1px solid rgba(64, 159, 255, 0.25);
+            border-radius: 6px;
+            padding: 10px 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #00d4ff, transparent);
+        }
+        .kpi-label {
+            font-size: 12px;
+            color: #8db8e0;
+            margin-bottom: 4px;
+        }
+        .kpi-value {
+            font-size: 22px;
+            font-weight: bold;
+            color: #00d4ff;
+            font-family: 'Consolas', monospace;
+            text-shadow: 0 0 6px rgba(0, 212, 255, 0.5);
+        }
+        .kpi-value .unit {
+            font-size: 12px;
+            color: #8db8e0;
+            margin-left: 3px;
+        }
+        .kpi-value.green { color: #10b981; text-shadow: 0 0 5px rgba(16, 185, 129, 0.5); }
+        .kpi-value.orange { color: #f59e0b; text-shadow: 0 0 5px rgba(245, 158, 11, 0.5); }
+        .kpi-value.red { color: #ef4444; text-shadow: 0 0 5px rgba(239, 68, 68, 0.5); }
+        .left-top { grid-column: 1; grid-row: 3; }
+        .left-middle { grid-column: 1; grid-row: 4; }
+        .left-bottom { grid-column: 1; grid-row: 5; }
+        .center-top { grid-column: 2; grid-row: 3; }
+        .center-middle { grid-column: 2; grid-row: 4; }
+        .center-bottom { grid-column: 2; grid-row: 5; }
+        .right-top { grid-column: 3; grid-row: 3; }
+        .right-middle { grid-column: 3; grid-row: 4; }
+        .right-bottom { grid-column: 3; grid-row: 5; }
+        .chart { width: 100%; height: 100%; }
+        .device-list {
+            height: 100%;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .device-list::-webkit-scrollbar { width: 4px; }
+        .device-list::-webkit-scrollbar-thumb { background: rgba(0, 212, 255, 0.3); border-radius: 2px; }
+        .device-item {
+            display: grid;
+            grid-template-columns: 1.2fr 1.1fr 0.8fr 0.7fr;
+            gap: 6px;
+            padding: 6px 8px;
+            border-bottom: 1px solid rgba(64, 159, 255, 0.1);
+            align-items: center;
+        }
+        .device-item:hover { background: rgba(0, 212, 255, 0.08); }
+        .device-item .id { color: #00d4ff; font-family: Consolas, monospace; font-size: 12px; font-weight: bold; }
+        .device-item .type { color: #b4c8d8; font-size: 11px; }
+        .device-status-tag {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            color: white;
+            text-align: center;
+        }
+        .device-item .health {
+            font-family: Consolas, monospace;
+            text-align: right;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .alarm-list {
+            height: 100%;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .alarm-list::-webkit-scrollbar { width: 4px; }
+        .alarm-list::-webkit-scrollbar-thumb { background: rgba(239, 68, 68, 0.3); border-radius: 2px; }
+        .alarm-item {
+            padding: 6px 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: grid;
+            grid-template-columns: 30px 1fr auto;
+            gap: 8px;
+            align-items: center;
+        }
+        .alarm-item .sev {
+            width: 24px;
+            height: 24px;
+            border-radius: 3px;
+            color: white;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        .sev-high { background: #ef4444; }
+        .sev-mid { background: #f59e0b; }
+        .sev-low { background: #3b82f6; }
+        .alarm-item .info { font-size: 12px; }
+        .alarm-item .info .desc { color: #ffd; font-size: 12px; }
+        .alarm-item .info .meta { color: #8db8e0; font-size: 11px; }
+        .alarm-item .time { color: #8db8e0; font-size: 11px; }
+        .offline-tag {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid #f59e0b;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #f59e0b;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+<div class="screen-container">
+    <div class="header-bar">
+        <div class="header-title">
+            智能制造工业设备监控大屏
+            <span class="subtitle">INDUSTRIAL EQUIPMENT MONITORING PLATFORM</span>
+        </div>
+        <div class="header-info">
+            <div class="info-item">班次：<span class="val">白班</span></div>
+            <div class="info-item">系统时间：<span class="val" id="sysTime">--</span></div>
+        </div>
+    </div>
+
+    <div class="kpi-bar">
+        <div class="kpi-card"><div class="kpi-label">设备总数</div><div class="kpi-value">10<span class="unit">台</span></div></div>
+        <div class="kpi-card"><div class="kpi-label">在线设备</div><div class="kpi-value green">8<span class="unit">台</span></div></div>
+        <div class="kpi-card"><div class="kpi-label">在线率</div><div class="kpi-value green">80.0<span class="unit">%</span></div></div>
+        <div class="kpi-card"><div class="kpi-label">运行中</div><div class="kpi-value green">6<span class="unit">台</span></div></div>
+        <div class="kpi-card"><div class="kpi-label">预警设备</div><div class="kpi-value orange">1<span class="unit">台</span></div></div>
+        <div class="kpi-card"><div class="kpi-label">故障设备</div><div class="kpi-value red">1<span class="unit">台</span></div></div>
+        <div class="kpi-card"><div class="kpi-label">全厂OEE</div><div class="kpi-value">78.6<span class="unit">%</span></div></div>
+        <div class="kpi-card"><div class="kpi-label">当日产量</div><div class="kpi-value">8450<span class="unit">件</span></div></div>
+    </div>
+
+    <div class="panel left-top">
+        <div class="panel-title"><span><span class="dot"></span>设备状态分布</span><span>共10台</span></div>
+        <div class="panel-body"><div id="statusPie" class="chart"></div></div>
+    </div>
+    <div class="panel left-middle">
+        <div class="panel-title"><span><span class="dot"></span>产线设备状态</span><span>10台设备</span></div>
+        <div class="panel-body">
+            <div class="device-list" id="deviceList"></div>
+        </div>
+    </div>
+    <div class="panel left-bottom">
+        <div class="panel-title"><span><span class="dot"></span>实时告警信息</span><span>8条告警</span></div>
+        <div class="panel-body">
+            <div class="alarm-list" id="alarmList"></div>
+        </div>
+    </div>
+
+    <div class="panel center-top">
+        <div class="panel-title"><span><span class="dot"></span>核心参数实时趋势</span><span>近24小时</span></div>
+        <div class="panel-body"><div id="paramsTrend" class="chart"></div></div>
+    </div>
+    <div class="panel center-middle">
+        <div class="panel-title"><span><span class="dot"></span>车间设备布局热力图</span><span>按健康度渲染</span></div>
+        <div class="panel-body"><div id="workshopHeat" class="chart"></div></div>
+    </div>
+    <div class="panel center-bottom">
+        <div class="panel-title"><span><span class="dot"></span>设备KPI指标对比</span><span>OEE / 稼动率 / 性能</span></div>
+        <div class="panel-body"><div id="kpiCompare" class="chart"></div></div>
+    </div>
+
+    <div class="panel right-top">
+        <div class="panel-title"><span><span class="dot"></span>车间环境监测</span><span>实时</span></div>
+        <div class="panel-body"><div id="envGauge" class="chart"></div></div>
+    </div>
+    <div class="panel right-middle">
+        <div class="panel-title"><span><span class="dot"></span>设备健康度排名</span><span>TOP10</span></div>
+        <div class="panel-body"><div id="healthRank" class="chart"></div></div>
+    </div>
+    <div class="panel right-bottom">
+        <div class="panel-title"><span><span class="dot"></span>MTBF / MTTR 分析</span><span>单位：小时</span></div>
+        <div class="panel-body"><div id="mtbfChart" class="chart"></div></div>
+    </div>
+</div>
+
+<div class="offline-tag">🟡 离线演示模式</div>
+
+<script>
+const STATUS_COLORS = {
+    0: '#666666', 1: '#22c55e', 2: '#10b981',
+    3: '#f59e0b', 4: '#ef4444', 5: '#dc2626', 6: '#3b82f6'
+};
+const STATUS_NAMES = {
+    0: '关机', 1: '待机', 2: '运行', 3: '预警', 4: '故障', 5: '急停', 6: '调试'
+};
+
+const charts = {};
+
+function initCharts() {
+    ['statusPie', 'paramsTrend', 'workshopHeat', 'kpiCompare',
+     'envGauge', 'healthRank', 'mtbfChart'].forEach(id => {
+        const dom = document.getElementById(id);
+        if (dom) charts[id] = echarts.init(dom);
+    });
+}
+
+window.addEventListener('resize', () => {
+    Object.values(charts).forEach(c => c && c.resize());
+});
+
+function updateSysTime() {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    document.getElementById('sysTime').textContent =
+        `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+setInterval(updateSysTime, 1000);
+updateSysTime();
+
+const mockDeviceStatus = [
+    { device_id: 'CNC-001', device_type: 'CNC加工中心', workshop: '机加工一车间', status_code: 2, status_name: '运行', health_score: 92 },
+    { device_id: 'CNC-002', device_type: 'CNC加工中心', workshop: '机加工一车间', status_code: 2, status_name: '运行', health_score: 88 },
+    { device_id: 'CNC-003', device_type: 'CNC加工中心', workshop: '机加工一车间', status_code: 3, status_name: '预警', health_score: 65 },
+    { device_id: 'RBT-001', device_type: '六轴工业机器人', workshop: '装配车间', status_code: 2, status_name: '运行', health_score: 95 },
+    { device_id: 'RBT-002', device_type: '六轴工业机器人', workshop: '装配车间', status_code: 1, status_name: '待机', health_score: 90 },
+    { device_id: 'RBT-003', device_type: '六轴工业机器人', workshop: '装配车间', status_code: 2, status_name: '运行', health_score: 87 },
+    { device_id: 'INJ-001', device_type: '伺服注塑机', workshop: '注塑车间', status_code: 4, status_name: '故障', health_score: 45 },
+    { device_id: 'INJ-002', device_type: '伺服注塑机', workshop: '注塑车间', status_code: 2, status_name: '运行', health_score: 82 },
+    { device_id: 'AIR-001', device_type: '螺杆空压机', workshop: '公用工程车间', status_code: 0, status_name: '关机', health_score: 98 },
+    { device_id: 'AIR-002', device_type: '螺杆空压机', workshop: '公用工程车间', status_code: 2, status_name: '运行', health_score: 85 }
+];
+
+const mockKpiData = [
+    { device_id: 'CNC-001', oee: 0.82, availability: 0.85, performance: 0.85, quality_rate: 0.95, mtbf: 125.5, mttr: 2.3 },
+    { device_id: 'CNC-002', oee: 0.78, availability: 0.82, performance: 0.85, quality_rate: 0.95, mtbf: 98.2, mttr: 3.1 },
+    { device_id: 'CNC-003', oee: 0.55, availability: 0.65, performance: 0.82, quality_rate: 0.95, mtbf: 45.8, mttr: 4.5 },
+    { device_id: 'RBT-001', oee: 0.88, availability: 0.90, performance: 0.88, quality_rate: 0.95, mtbf: 180.3, mttr: 1.8 },
+    { device_id: 'RBT-002', oee: 0.72, availability: 0.78, performance: 0.85, quality_rate: 0.95, mtbf: 156.0, mttr: 2.5 },
+    { device_id: 'RBT-003', oee: 0.80, availability: 0.84, performance: 0.85, quality_rate: 0.95, mtbf: 112.6, mttr: 2.9 },
+    { device_id: 'INJ-001', oee: 0.42, availability: 0.55, performance: 0.80, quality_rate: 0.90, mtbf: 35.2, mttr: 8.2 },
+    { device_id: 'INJ-002', oee: 0.76, availability: 0.81, performance: 0.85, quality_rate: 0.95, mtbf: 88.5, mttr: 3.2 },
+    { device_id: 'AIR-001', oee: 0.00, availability: 0.00, performance: 0.00, quality_rate: 0.00, mtbf: 0, mttr: 0 },
+    { device_id: 'AIR-002', oee: 0.85, availability: 0.88, performance: 0.88, quality_rate: 0.95, mtbf: 205.0, mttr: 1.5 }
+];
+
+const mockAlarms = [
+    { device_id: 'CNC-003', alarm_desc: '主轴过热', device_type: 'CNC加工中心', workshop: '机加工一车间', status: '预警', timestamp: '2026-07-20 14:32:15', severity: '高' },
+    { device_id: 'INJ-001', alarm_desc: '液压油高温', device_type: '伺服注塑机', workshop: '注塑车间', status: '故障', timestamp: '2026-07-20 14:28:42', severity: '高' },
+    { device_id: 'CNC-002', alarm_desc: '刀具磨损', device_type: 'CNC加工中心', workshop: '机加工一车间', status: '运行', timestamp: '2026-07-20 14:15:33', severity: '低' },
+    { device_id: 'RBT-002', alarm_desc: '关节过载', device_type: '六轴工业机器人', workshop: '装配车间', status: '待机', timestamp: '2026-07-20 13:58:21', severity: '中' },
+    { device_id: 'INJ-002', alarm_desc: '模具温度异常', device_type: '伺服注塑机', workshop: '注塑车间', status: '运行', timestamp: '2026-07-20 13:42:18', severity: '低' },
+    { device_id: 'CNC-001', alarm_desc: '液压低压', device_type: 'CNC加工中心', workshop: '机加工一车间', status: '运行', timestamp: '2026-07-20 13:25:45', severity: '中' },
+    { device_id: 'RBT-003', alarm_desc: '减速器润滑失效', device_type: '六轴工业机器人', workshop: '装配车间', status: '运行', timestamp: '2026-07-20 12:58:33', severity: '中' },
+    { device_id: 'AIR-002', alarm_desc: '油气分离器堵塞', device_type: '螺杆空压机', workshop: '公用工程车间', status: '运行', timestamp: '2026-07-20 12:35:19', severity: '低' }
+];
+
+const mockParamsTrend = {
+    hours: Array.from({length: 24}, (_, i) => i),
+    temperature: [28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29],
+    pressure: [6.2, 6.5, 6.8, 7.1, 7.3, 7.5, 7.8, 8.0, 8.2, 8.5, 8.8, 9.0, 9.2, 9.0, 8.8, 8.5, 8.2, 7.8, 7.5, 7.2, 7.0, 6.8, 6.5, 6.3],
+    vibration: [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 2.0, 2.2, 2.5, 2.3, 2.1, 1.9, 1.7, 1.5, 1.3, 1.1, 1.0, 0.9, 0.8, 0.7],
+    load: [45, 48, 52, 58, 62, 68, 72, 75, 78, 82, 85, 88, 90, 88, 85, 82, 78, 75, 70, 65, 60, 55, 50, 46]
+};
+
+const mockEnvironment = {
+    workshop_temp: 26.8,
+    workshop_humidity: 45.2,
+    workshop_pressure: 101.3,
+    pm25: 28,
+    noise: 65.5,
+    cabinet_temp: 32.1,
+    air_quality: '优'
+};
+
+function renderStatusPie() {
+    if (!charts.statusPie) return;
+    const stats = {};
+    Object.keys(STATUS_NAMES).forEach(k => stats[k] = 0);
+    mockDeviceStatus.forEach(d => { stats[d.status_code] = (stats[d.status_code] || 0) + 1; });
+
+    const pieData = Object.entries(stats)
+        .filter(([k, v]) => v > 0)
+        .map(([k, v]) => ({
+            name: STATUS_NAMES[k],
+            value: v,
+            itemStyle: { color: STATUS_COLORS[k] }
+        }));
+
+    charts.statusPie.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c}台 ({d}%)' },
+        legend: {
+            bottom: 2, left: 'center',
+            textStyle: { color: '#8db8e0', fontSize: 11 },
+            itemWidth: 10, itemHeight: 10
+        },
+        series: [{
+            type: 'pie',
+            radius: ['42%', '72%'],
+            center: ['50%', '42%'],
+            avoidLabelOverlap: true,
+            label: { color: '#d4e3f5', fontSize: 11, formatter: '{b}\n{c}台' },
+            labelLine: { lineStyle: { color: '#8db8e0' } },
+            itemStyle: { borderColor: '#060d1f', borderWidth: 2 },
+            data: pieData
+        }]
+    });
+}
+
+function renderDeviceList() {
+    const html = mockDeviceStatus.map(d => {
+        const color = STATUS_COLORS[d.status_code] || '#888';
+        return `
+            <div class="device-item">
+                <div>
+                    <div class="id">${d.device_id}</div>
+                    <div class="type">${d.device_type}</div>
+                </div>
+                <div class="type">${d.workshop}</div>
+                <div><span class="device-status-tag" style="background:${color}">${d.status_name}</span></div>
+                <div class="health" style="color:${d.health_score >= 80 ? '#10b981' : d.health_score >= 60 ? '#f59e0b' : '#ef4444'}">${d.health_score}</div>
+            </div>
+        `;
+    }).join('');
+    document.getElementById('deviceList').innerHTML = html;
+}
+
+function renderAlarmList() {
+    const sevMap = { '高': 'high', '中': 'mid', '低': 'low' };
+    const html = mockAlarms.map(a => {
+        const sevClass = sevMap[a.severity] || 'low';
+        return `
+            <div class="alarm-item">
+                <div class="sev sev-${sevClass}">${a.severity}</div>
+                <div class="info">
+                    <div class="desc">[${a.device_id}] ${a.alarm_desc}</div>
+                    <div class="meta">${a.device_type} · ${a.workshop}</div>
+                </div>
+                <div class="time">${(a.timestamp || '').substring(11, 19)}</div>
+            </div>
+        `;
+    }).join('');
+    document.getElementById('alarmList').innerHTML = html;
+}
+
+function renderParamsTrend() {
+    if (!charts.paramsTrend) return;
+    const hours = mockParamsTrend.hours || [];
+    charts.paramsTrend.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: {
+            data: ['温度(℃)', '压力(MPa)', '振动(mm/s)', '负载率(%)'],
+            textStyle: { color: '#8db8e0', fontSize: 11 },
+            top: 0
+        },
+        grid: { left: 55, right: 40, top: 35, bottom: 30 },
+        xAxis: {
+            type: 'category',
+            data: hours.map(h => String(h).padStart(2, '0') + ':00'),
+            axisLine: { lineStyle: { color: '#8db8e0' } },
+            axisLabel: { color: '#8db8e0', fontSize: 10 }
+        },
+        yAxis: [
+            { type: 'value', name: '', axisLine: { lineStyle: { color: '#8db8e0' } }, axisLabel: { color: '#8db8e0', fontSize: 10 }, splitLine: { lineStyle: { color: 'rgba(141,184,224,0.1)' } } },
+            { type: 'value', name: '', axisLine: { lineStyle: { color: '#8db8e0' } }, axisLabel: { color: '#8db8e0', fontSize: 10 }, splitLine: { show: false } }
+        ],
+        series: [
+            { name: '温度(℃)', type: 'line', smooth: true, data: mockParamsTrend.temperature || [], itemStyle: { color: '#ef4444' }, areaStyle: { color: 'rgba(239,68,68,0.1)' }, lineStyle: { width: 2 } },
+            { name: '压力(MPa)', type: 'line', smooth: true, yAxisIndex: 1, data: mockParamsTrend.pressure || [], itemStyle: { color: '#f59e0b' }, lineStyle: { width: 2 } },
+            { name: '振动(mm/s)', type: 'line', smooth: true, yAxisIndex: 1, data: mockParamsTrend.vibration || [], itemStyle: { color: '#3b82f6' }, lineStyle: { width: 2 } },
+            { name: '负载率(%)', type: 'line', smooth: true, data: mockParamsTrend.load || [], itemStyle: { color: '#10b981' }, lineStyle: { width: 2 } }
+        ]
+    });
+}
+
+function renderWorkshopHeat() {
+    if (!charts.workshopHeat) return;
+    const workshops = {};
+    mockDeviceStatus.forEach(d => {
+        if (!workshops[d.workshop]) {
+            workshops[d.workshop] = { total: 0, healthSum: 0, devices: [] };
+        }
+        workshops[d.workshop].total++;
+        workshops[d.workshop].healthSum += d.health_score || 0;
+        workshops[d.workshop].devices.push(d);
+    });
+
+    const workshopNames = Object.keys(workshops);
+    const scatterData = [];
+    workshopNames.forEach((ws, yIdx) => {
+        workshops[ws].devices.forEach((d, xIdx) => {
+            scatterData.push({
+                value: [xIdx, yIdx, d.health_score, d.device_id, d.status_name, d.device_type],
+                itemStyle: {
+                    color: d.health_score >= 80 ? '#10b981' :
+                            d.health_score >= 60 ? '#f59e0b' : '#ef4444'
+                }
+            });
+        });
+    });
+
+    charts.workshopHeat.setOption({
+        tooltip: {
+            formatter: p => `${p.value[3]}<br/>车间：${workshopNames[p.value[1]]}<br/>类型：${p.value[5]}<br/>状态：${p.value[4]}<br/>健康度：${p.value[2]}`
+        },
+        grid: { left: 95, right: 30, top: 20, bottom: 30 },
+        xAxis: {
+            type: 'value',
+            min: -0.8,
+            max: 4.8,
+            axisLabel: { show: false },
+            axisLine: { show: false },
+            splitLine: { show: false }
+        },
+        yAxis: {
+            type: 'category',
+            data: workshopNames,
+            axisLine: { lineStyle: { color: '#8db8e0' } },
+            axisLabel: { color: '#8db8e0', fontSize: 12 }
+        },
+        series: [{
+            type: 'scatter',
+            symbolSize: data => 32 + (data[2] / 100) * 12,
+            data: scatterData,
+            label: {
+                show: true,
+                formatter: p => p.value[3].replace(/-\d+$/, ''),
+                color: '#fff',
+                fontSize: 11,
+                fontWeight: 'bold'
+            },
+            emphasis: { scale: 1.3, label: { fontSize: 13 } }
+        }]
+    });
+}
+
+function renderKpiCompare() {
+    if (!charts.kpiCompare) return;
+    const activeKpi = mockKpiData.filter(d => d.oee > 0);
+    const ids = activeKpi.map(d => d.device_id);
+    charts.kpiCompare.setOption({
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        legend: {
+            data: ['OEE', '稼动率', '性能', '良品率'],
+            textStyle: { color: '#8db8e0', fontSize: 11 },
+            top: 0
+        },
+        grid: { left: 55, right: 30, top: 35, bottom: 55 },
+        xAxis: {
+            type: 'category',
+            data: ids,
+            axisLine: { lineStyle: { color: '#8db8e0' } },
+            axisLabel: { color: '#8db8e0', rotate: 35, fontSize: 10 }
+        },
+        yAxis: {
+            type: 'value',
+            max: 1,
+            axisLabel: { color: '#8db8e0', fontSize: 10, formatter: v => (v * 100).toFixed(0) + '%' },
+            splitLine: { lineStyle: { color: 'rgba(141,184,224,0.1)' } }
+        },
+        series: [
+            { name: 'OEE', type: 'bar', data: activeKpi.map(d => d.oee), itemStyle: { color: '#00d4ff' }, barWidth: '18%' },
+            { name: '稼动率', type: 'bar', data: activeKpi.map(d => d.availability), itemStyle: { color: '#10b981' }, barWidth: '18%' },
+            { name: '性能', type: 'bar', data: activeKpi.map(d => d.performance), itemStyle: { color: '#f59e0b' }, barWidth: '18%' },
+            { name: '良品率', type: 'bar', data: activeKpi.map(d => d.quality_rate), itemStyle: { color: '#a855f7' }, barWidth: '18%' }
+        ]
+    });
+}
+
+function renderEnvGauge() {
+    if (!charts.envGauge) return;
+    const gauges = [
+        { title: '温度', value: mockEnvironment.workshop_temp, unit: '℃', min: 0, max: 50, color: '#ef4444' },
+        { title: '湿度', value: mockEnvironment.workshop_humidity, unit: '%RH', min: 0, max: 100, color: '#3b82f6' },
+        { title: '气压', value: mockEnvironment.workshop_pressure, unit: 'kPa', min: 80, max: 110, color: '#10b981' },
+        { title: 'PM2.5', value: mockEnvironment.pm25, unit: 'μg/m³', min: 0, max: 150, color: '#f59e0b' },
+        { title: '噪声', value: mockEnvironment.noise, unit: 'dB', min: 30, max: 100, color: '#a855f7' },
+        { title: '电柜', value: mockEnvironment.cabinet_temp, unit: '℃', min: 0, max: 80, color: '#00d4ff' }
+    ];
+
+    const dom = document.getElementById('envGauge');
+    const width = dom.offsetWidth;
+    const height = dom.offsetHeight;
+    const gap = 15;
+    const colWidth = (width - gap) / 2;
+    const rowHeight = (height - gap * 2 - 25 - 20) / 3;
+    const radius = Math.min(colWidth, rowHeight) * 0.42;
+
+    charts.envGauge.setOption({
+        title: {
+            text: '空气质量: ' + mockEnvironment.air_quality,
+            textStyle: { color: '#10b981', fontSize: 12 },
+            left: 'center',
+            top: 5
+        },
+        series: gauges.map((g, idx) => {
+            const col = idx % 2;
+            const row = Math.floor(idx / 2);
+            const extraGap = row > 0 ? row * 10 : 0;
+            return {
+                type: 'gauge',
+                center: [colWidth * col + colWidth / 2, 25 + rowHeight * row + rowHeight / 2 + extraGap],
+                radius: radius,
+                min: g.min,
+                max: g.max,
+                startAngle: 180,
+                endAngle: 0,
+                title: { color: '#8db8e0', fontSize: 12, offsetCenter: [0, '85%'] },
+                detail: {
+                    valueAnimation: true,
+                    formatter: '{value}',
+                    color: g.color,
+                    fontSize: 16,
+                    offsetCenter: [0, '45%']
+                },
+                axisLine: { lineStyle: { width: 10, color: [[0.5, '#10b981'], [0.8, '#f59e0b'], [1, '#ef4444']] } },
+                pointer: { width: 3, length: '55%' },
+                axisTick: { show: false },
+                splitLine: { show: false },
+                axisLabel: { show: false },
+                data: [{ value: g.value, name: g.title }]
+            };
+        })
+    });
+}
+
+function renderHealthRank() {
+    if (!charts.healthRank) return;
+    const top = [...mockDeviceStatus].sort((a, b) => b.health_score - a.health_score).slice(0, 10).reverse();
+    charts.healthRank.setOption({
+        tooltip: {
+            formatter: p => `${p.name}<br/>健康度: ${p.value}`
+        },
+        grid: { left: 85, right: 40, top: 8, bottom: 20 },
+        xAxis: { type: 'value', max: 100, axisLabel: { color: '#8db8e0', fontSize: 10 }, splitLine: { lineStyle: { color: 'rgba(141,184,224,0.1)' } } },
+        yAxis: {
+            type: 'category',
+            data: top.map(d => d.device_id),
+            axisLine: { lineStyle: { color: '#8db8e0' } },
+            axisLabel: { color: '#8db8e0', fontSize: 11 }
+        },
+        series: [{
+            type: 'bar',
+            data: top.map(d => ({
+                value: d.health_score,
+                itemStyle: {
+                    color: d.health_score >= 80 ? '#10b981' :
+                            d.health_score >= 60 ? '#f59e0b' : '#ef4444'
+                }
+            })),
+            label: { show: true, position: 'right', color: '#d4e3f5', fontSize: 11, formatter: '{c}' },
+            barWidth: '55%'
+        }]
+    });
+}
+
+function renderMtbf() {
+    if (!charts.mtbfChart) return;
+    const activeKpi = mockKpiData.filter(d => d.mtbf > 0);
+    const ids = activeKpi.map(d => d.device_id);
+    charts.mtbfChart.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['MTBF(小时)', 'MTTR(小时)'], textStyle: { color: '#8db8e0', fontSize: 11 }, top: 0 },
+        grid: { left: 55, right: 30, top: 30, bottom: 55 },
+        xAxis: {
+            type: 'category',
+            data: ids,
+            axisLine: { lineStyle: { color: '#8db8e0' } },
+            axisLabel: { color: '#8db8e0', rotate: 35, fontSize: 10 }
+        },
+        yAxis: {
+            type: 'value',
+            axisLabel: { color: '#8db8e0', fontSize: 10 },
+            splitLine: { lineStyle: { color: 'rgba(141,184,224,0.1)' } }
+        },
+        series: [
+            { name: 'MTBF(小时)', type: 'bar', data: activeKpi.map(d => d.mtbf), itemStyle: { color: '#10b981' }, barWidth: '25%' },
+            { name: 'MTTR(小时)', type: 'bar', data: activeKpi.map(d => d.mttr), itemStyle: { color: '#ef4444' }, barWidth: '25%' }
+        ]
+    });
+}
+
+function loadAllData() {
+    renderStatusPie();
+    renderDeviceList();
+    renderAlarmList();
+    renderParamsTrend();
+    renderWorkshopHeat();
+    renderKpiCompare();
+    renderEnvGauge();
+    renderHealthRank();
+    renderMtbf();
+}
+
+window.addEventListener('load', () => {
+    initCharts();
+    loadAllData();
+});
+</script>
+</body>
+</html>
