@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用户端用气安全 - 燃气管网安全风控系统</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/lib/echarts.min.js"></script>
+</head>
+<body>
+<div class="layout">
+  <aside id="sidebar"></aside>
+  <main>
+    <div class="page-header">
+      <h1>5. 用户端用气安全</h1>
+      <p>对居民/工商用户燃气表数据做安全扫描，识别熄火（火焰信号丢失仍过气）、户内微泄漏（持续涓流）、
+        过流（软管脱落）、CO 超标等风险。可注入异常工况验证识别效果。</p>
+    </div>
+
+    <div class="card">
+      <div class="form">
+        <button class="btn" id="btn-scan">立即全网扫描</button>
+        <label>注入异常用户 <select id="anomaly-user"></select></label>
+        <label>异常类型
+          <select id="anomaly-type">
+            <option>微泄漏</option><option>熄火</option><option>CO超标</option><option>软管脱落</option>
+          </select>
+        </label>
+        <button class="btn danger" id="btn-inject">注入异常（下次扫描生效）</button>
+      </div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card">
+        <h3>风险分布</h3>
+        <div id="chart-pie" class="chart short"></div>
+      </div>
+      <div class="card">
+        <h3>用户流量历史 <small>点击右侧表格行查看</small></h3>
+        <div id="chart-flow" class="chart short"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>用户风险清单</h3>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>用户</th><th>类型</th><th>流量 m³/h</th><th>表压 kPa</th><th>CO ppm</th>
+            <th>火焰</th><th>风险级别</th><th>识别结论</th>
+          </tr></thead>
+          <tbody id="user-body"><tr><td colspan="8" class="muted">请先点击「立即全网扫描」</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/common.js"></script>
+<script src="js/usersafety.js"></script>
+</body>
+</html>
