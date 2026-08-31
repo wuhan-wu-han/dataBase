@@ -214,7 +214,7 @@ def _poll_tunnel_alarms() -> None:
                 "alarm_id": alarm_id,
                 "alarm": {
                     "alarm_code": alarm.get("alarm_code"),
-                    "alarm_desc": alarm.get("alarm_desc"),
+                    "alarm_desc": alarm.get("alarm_desc") or alarm.get("metric"),
                     "metric": alarm.get("metric"),
                     "level": alarm.get("level"),
                     "severity": alarm.get("severity") or LEVEL_NAMES.get(alarm.get("level"), ""),

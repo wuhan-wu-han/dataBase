@@ -55,6 +55,13 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 output_dir = os.path.join(project_root, "output")
 app.mount("/output", StaticFiles(directory=output_dir), name="output")
 
+# 注册数字化预案管理子模块路由（兼容两种启动方式）
+try:
+    from plan_api import router as plan_router            # cd src/python 后启动
+except ImportError:
+    from src.python.plan_api import router as plan_router  # 项目根启动
+app.include_router(plan_router)
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================
