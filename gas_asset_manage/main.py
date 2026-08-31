@@ -5,8 +5,8 @@ main.py — 资产数字化台账子模块 服务入口
 天信城市生命线管网 AI 智慧平台 · 燃气资产数字化台账
 启动方式：
     pip install -r requirements.txt
-    python main.py          # 默认端口 8001（可用环境变量 PORT 覆盖）
-接口文档：http://localhost:8001/docs
+    python main.py          # 默认端口 8002（可用环境变量 PORT 覆盖）
+接口文档：http://localhost:8002/docs
 """
 import os
 from contextlib import asynccontextmanager
@@ -61,4 +61,4 @@ def root():
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", "8001")))
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", "8002")))

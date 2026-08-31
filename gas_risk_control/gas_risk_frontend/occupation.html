@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>占压隐患管理 - 燃气管网安全风控系统</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/lib/echarts.min.js"></script>
+</head>
+<body>
+<div class="layout">
+  <aside id="sidebar"></aside>
+  <main>
+    <div class="page-header">
+      <h1>6. 占压隐患管理</h1>
+      <p>建筑占压、重物堆压等隐患的台账管理与整改跟踪闭环：
+        待下达 → 已下达 → 整改中 → 待验收 → 已闭环。每次整改动作形成时间线记录。</p>
+    </div>
+
+    <div class="grid cols-3">
+      <div class="card">
+        <h3>隐患类型分布</h3>
+        <div id="chart-type" class="chart short"></div>
+      </div>
+      <div class="card">
+        <h3>整改状态分布</h3>
+        <div id="chart-status" class="chart short"></div>
+      </div>
+      <div class="card">
+        <h3>闭环情况</h3>
+        <div id="closure-info" class="chart short" style="display:flex;flex-direction:column;justify-content:center;gap:14px;padding:10px">
+          <div class="stat-card"><div class="label">隐患总数</div><div class="value accent" id="cl-total">-</div></div>
+          <div class="stat-card"><div class="label">已闭环</div><div class="value green" id="cl-closed">-</div></div>
+          <div class="stat-card"><div class="label">闭环率</div><div class="value yellow" id="cl-rate">-</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>隐患台账
+        <small>
+          <select id="filter-status" style="margin-left:10px">
+            <option value="">全部状态</option>
+            <option>待下达</option><option>已下达</option><option>整改中</option><option>待验收</option><option>已闭环</option>
+          </select>
+          <select id="filter-type">
+            <option value="">全部类型</option>
+            <option>建筑占压</option><option>重物堆压</option><option>施工占压</option><option>其他占压</option>
+          </select>
+        </small>
+        <button class="btn sm" style="float:right" id="btn-new">+ 新增隐患登记</button>
+      </h3>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>编号</th><th>类型</th><th>桩号 km</th><th>描述</th><th>风险</th>
+            <th>责任单位</th><th>整改期限</th><th>状态</th><th>操作</th>
+          </tr></thead>
+          <tbody id="record-body"><tr><td colspan="9" class="muted">加载中…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 新增隐患弹窗 -->
+<div class="modal-mask" id="modal-new">
+  <div class="modal">
+    <h3>新增隐患登记</h3>
+    <div class="form">
+      <label>类型
+        <select id="new-type"><option>建筑占压</option><option>重物堆压</option><option>施工占压</option><option>其他占压</option></select>
+      </label>
+      <label>桩号 km <input type="number" id="new-km" step="0.1" min="0" max="50" value="20"></label>
+      <label>风险等级
+        <select id="new-level"><option>高</option><option selected>中</option><option>低</option></select>
+      </label>
+      <label>责任单位 <input type="text" id="new-resp" placeholder="责任单位/责任人"></label>
+      <label>整改期限 <input type="date" id="new-deadline"></label>
+      <label style="flex:1 1 100%">描述 <textarea id="new-desc" rows="3" style="width:100%" placeholder="隐患位置、占压物、与管道相对位置等"></textarea></label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn" id="btn-save-new">保存登记</button>
+    </div>
+  </div>
+</div>
+
+<!-- 整改跟踪弹窗 -->
+<div class="modal-mask" id="modal-rectify">
+  <div class="modal">
+    <h3>整改跟踪 — <span id="rectify-title"></span></h3>
+    <div class="form">
+      <label>整改动作 <input type="text" id="rectify-action" style="min-width:260px" placeholder="如：下达整改通知书 / 现场清除堆土"></label>
+      <label>经办人 <input type="text" id="rectify-operator" value="管理员"></label>
+      <label>流转状态
+        <select id="rectify-status">
+          <option>已下达</option><option>整改中</option><option>待验收</option><option>已闭环</option>
+        </select>
+      </label>
+      <button class="btn" id="btn-save-rectify">记录并流转</button>
+    </div>
+    <h3 class="mt">整改时间线</h3>
+    <ul class="timeline" id="rectify-timeline"></ul>
+    <div class="modal-actions"><button class="btn ghost" data-close>关闭</button></div>
+  </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/common.js"></script>
+<script src="js/occupation.js"></script>
+</body>
+</html>
