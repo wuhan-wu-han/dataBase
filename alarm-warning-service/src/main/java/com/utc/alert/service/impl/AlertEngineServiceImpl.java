@@ -13,6 +13,7 @@ import com.utc.alert.mapper.AlertEventMapper;
 import com.utc.alert.mapper.AlertGroupMapper;
 import com.utc.alert.service.AlertDedupService;
 import com.utc.alert.service.AlertEngineService;
+import com.utc.alert.service.PriorityCalcService;
 import com.utc.alert.service.RootCauseService;
 import com.utc.alert.service.RuleMatchService;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ public class AlertEngineServiceImpl implements AlertEngineService {
     private final RuleMatchService ruleMatchService;
     private final RootCauseService rootCauseService;
     private final AlertDedupService alertDedupService;
+    private final PriorityCalcService priorityCalcService;
     private final AlertEventMapper alertEventMapper;
     private final AlertGroupMapper alertGroupMapper;
 
@@ -106,6 +108,14 @@ public class AlertEngineServiceImpl implements AlertEngineService {
                 log.error("Dedup processing failed, eventId={}, skipping dedup",
                         message.getEventId(), e);
                 event.setMergedCount(1);
+            }
+
+            try {
+                int priorityScore = priorityCalcService.calculate(event);
+                event.setPriorityScore(priorityScore);
+            } catch (Exception e) {
+                log.error("Priority calculation failed, eventId={}", message.getEventId(), e);
+                event.setPriorityScore(0);
             }
 
             alertEventMapper.insert(event);
