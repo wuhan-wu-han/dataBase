@@ -6,6 +6,7 @@ import com.utc.alert.dto.kafka.KafkaMessage;
 import com.utc.alert.dto.kafka.LocationInfo;
 import com.utc.alert.entity.AlertEvent;
 import com.utc.alert.entity.AlertGroup;
+import com.utc.alert.kafka.producer.AlertEventProducer;
 import com.utc.alert.mapper.AlertEventMapper;
 import com.utc.alert.mapper.AlertGroupMapper;
 import com.utc.alert.service.impl.AlertEngineServiceImpl;
@@ -42,6 +43,9 @@ class AlertEngineServiceTest {
 
     @Mock
     private PriorityCalcService priorityCalcService;
+
+    @Mock
+    private AlertEventProducer alertEventProducer;
 
     @Mock
     private AlertEventMapper alertEventMapper;
@@ -303,6 +307,47 @@ class AlertEngineServiceTest {
         ArgumentCaptor<AlertEvent> captor = ArgumentCaptor.forClass(AlertEvent.class);
         verify(alertEventMapper).insert(captor.capture());
         assertEquals(0, captor.getValue().getPriorityScore());
+    }
+
+    @Test
+    void processMessage_afterInsert_callsProducer() {
+        MatchResult result = buildMatchResult("RED", "RULE-P-001", "pressure",
+                new BigDecimal("4.5"), new BigDecimal("4.0"));
+        when(ruleMatchService.matchRules(any())).thenReturn(List.of(result));
+        when(rootCauseService.analyze(any()))
+                .thenReturn(buildRootCauseResult("PRESSURE_ABNORMAL", "压力指标异常"));
+        when(alertDedupService.tryMerge(any())).thenReturn(Optional.empty());
+        when(priorityCalcService.calculate(any())).thenReturn(85);
+        when(alertEventMapper.insert(any(AlertEvent.class))).thenReturn(1);
+
+        alertEngineService.processMessage(baseMessage);
+
+        verify(alertEventProducer).send(any(AlertEvent.class));
+    }
+
+    @Test
+    void processMessage_noMatch_doesNotCallProducer() {
+        when(ruleMatchService.matchRules(any())).thenReturn(Collections.emptyList());
+
+        alertEngineService.processMessage(baseMessage);
+
+        verify(alertEventProducer, never()).send(any());
+    }
+
+    @Test
+    void processMessage_producerException_doesNotThrow() {
+        MatchResult result = buildMatchResult("RED", "RULE-P-001", "pressure",
+                new BigDecimal("4.5"), new BigDecimal("4.0"));
+        when(ruleMatchService.matchRules(any())).thenReturn(List.of(result));
+        when(rootCauseService.analyze(any()))
+                .thenReturn(buildRootCauseResult("PRESSURE_ABNORMAL", "压力指标异常"));
+        when(alertDedupService.tryMerge(any())).thenReturn(Optional.empty());
+        when(priorityCalcService.calculate(any())).thenReturn(85);
+        when(alertEventMapper.insert(any(AlertEvent.class))).thenReturn(1);
+        doThrow(new RuntimeException("Kafka down")).when(alertEventProducer).send(any());
+
+        assertDoesNotThrow(() -> alertEngineService.processMessage(baseMessage));
+        verify(alertEventMapper).insert(any(AlertEvent.class));
     }
 
     private MatchResult buildMatchResult(String level, String ruleCode, String metricKey,
