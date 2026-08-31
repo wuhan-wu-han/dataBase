@@ -5,7 +5,9 @@ import com.utc.alert.dto.RootCauseResult;
 import com.utc.alert.dto.kafka.KafkaMessage;
 import com.utc.alert.dto.kafka.LocationInfo;
 import com.utc.alert.entity.AlertEvent;
+import com.utc.alert.entity.AlertGroup;
 import com.utc.alert.mapper.AlertEventMapper;
+import com.utc.alert.mapper.AlertGroupMapper;
 import com.utc.alert.service.impl.AlertEngineServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +22,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -35,7 +38,13 @@ class AlertEngineServiceTest {
     private RootCauseService rootCauseService;
 
     @Mock
+    private AlertDedupService alertDedupService;
+
+    @Mock
     private AlertEventMapper alertEventMapper;
+
+    @Mock
+    private AlertGroupMapper alertGroupMapper;
 
     @InjectMocks
     private AlertEngineServiceImpl alertEngineService;
@@ -76,6 +85,12 @@ class AlertEngineServiceTest {
         when(ruleMatchService.matchRules(any())).thenReturn(List.of(redResult));
         when(rootCauseService.analyze(any()))
                 .thenReturn(buildRootCauseResult("PRESSURE_ABNORMAL", "压力指标异常，需要检查管道压力状态。"));
+        when(alertDedupService.tryMerge(any())).thenReturn(Optional.empty());
+        AlertGroup newGroup = new AlertGroup();
+        newGroup.setId(100L);
+        newGroup.setAreaId("AREA-A01");
+        newGroup.setTotalCount(1);
+        when(alertGroupMapper.selectOne(any())).thenReturn(newGroup);
         when(alertEventMapper.insert(any(AlertEvent.class))).thenReturn(1);
 
         alertEngineService.processMessage(baseMessage);
@@ -98,6 +113,7 @@ class AlertEngineServiceTest {
         assertEquals(new BigDecimal("4.0"), event.getThresholdValue());
         assertEquals("PRESSURE_ABNORMAL", event.getRootCause());
         assertEquals("压力指标异常，需要检查管道压力状态。", event.getRootCauseDesc());
+        assertEquals(100L, event.getAlertGroupId());
         assertEquals(1725100800000L, event.getEventTimestamp());
         assertEquals(0, event.getPriorityScore());
         assertEquals(1, event.getMergedCount());
@@ -113,6 +129,7 @@ class AlertEngineServiceTest {
         when(ruleMatchService.matchRules(any())).thenReturn(List.of(blueResult, redResult));
         when(rootCauseService.analyze(any()))
                 .thenReturn(buildRootCauseResult("PRESSURE_ABNORMAL", "压力指标异常"));
+        when(alertDedupService.tryMerge(any())).thenReturn(Optional.empty());
         when(alertEventMapper.insert(any(AlertEvent.class))).thenReturn(1);
 
         alertEngineService.processMessage(baseMessage);
@@ -190,6 +207,7 @@ class AlertEngineServiceTest {
         when(ruleMatchService.matchRules(any())).thenReturn(List.of(result));
         when(rootCauseService.analyze(any()))
                 .thenReturn(buildRootCauseResult("PRESSURE_ABNORMAL", "压力指标异常"));
+        when(alertDedupService.tryMerge(any())).thenReturn(Optional.empty());
         when(alertEventMapper.insert(any())).thenThrow(new RuntimeException("DB error"));
 
         assertDoesNotThrow(() -> alertEngineService.processMessage(baseMessage));
@@ -209,6 +227,7 @@ class AlertEngineServiceTest {
                 new BigDecimal("4.5"), new BigDecimal("4.0"));
         when(ruleMatchService.matchRules(any())).thenReturn(List.of(result));
         when(rootCauseService.analyze(any())).thenThrow(new RuntimeException("Root cause error"));
+        when(alertDedupService.tryMerge(any())).thenReturn(Optional.empty());
         when(alertEventMapper.insert(any(AlertEvent.class))).thenReturn(1);
 
         alertEngineService.processMessage(baseMessage);
@@ -217,6 +236,46 @@ class AlertEngineServiceTest {
         verify(alertEventMapper).insert(captor.capture());
         assertNull(captor.getValue().getRootCause());
         assertNull(captor.getValue().getRootCauseDesc());
+    }
+
+    @Test
+    void processMessage_dedupMerge_setsGroupIdAndMergedCount() {
+        MatchResult result = buildMatchResult("RED", "RULE-P-001", "pressure",
+                new BigDecimal("4.5"), new BigDecimal("4.0"));
+        when(ruleMatchService.matchRules(any())).thenReturn(List.of(result));
+        when(rootCauseService.analyze(any()))
+                .thenReturn(buildRootCauseResult("PRESSURE_ABNORMAL", "压力指标异常"));
+        when(alertDedupService.tryMerge(any())).thenReturn(Optional.of(42L));
+        AlertGroup existingGroup = new AlertGroup();
+        existingGroup.setId(42L);
+        existingGroup.setTotalCount(3);
+        when(alertGroupMapper.selectById(42L)).thenReturn(existingGroup);
+        when(alertEventMapper.insert(any(AlertEvent.class))).thenReturn(1);
+
+        alertEngineService.processMessage(baseMessage);
+
+        ArgumentCaptor<AlertEvent> captor = ArgumentCaptor.forClass(AlertEvent.class);
+        verify(alertEventMapper).insert(captor.capture());
+        assertEquals(42L, captor.getValue().getAlertGroupId());
+        assertEquals(3, captor.getValue().getMergedCount());
+    }
+
+    @Test
+    void processMessage_dedupException_stillSavesAlert() {
+        MatchResult result = buildMatchResult("RED", "RULE-P-001", "pressure",
+                new BigDecimal("4.5"), new BigDecimal("4.0"));
+        when(ruleMatchService.matchRules(any())).thenReturn(List.of(result));
+        when(rootCauseService.analyze(any()))
+                .thenReturn(buildRootCauseResult("PRESSURE_ABNORMAL", "压力指标异常"));
+        when(alertDedupService.tryMerge(any())).thenThrow(new RuntimeException("Redis down"));
+        when(alertEventMapper.insert(any(AlertEvent.class))).thenReturn(1);
+
+        alertEngineService.processMessage(baseMessage);
+
+        ArgumentCaptor<AlertEvent> captor = ArgumentCaptor.forClass(AlertEvent.class);
+        verify(alertEventMapper).insert(captor.capture());
+        assertNull(captor.getValue().getAlertGroupId());
+        assertEquals(1, captor.getValue().getMergedCount());
     }
 
     private MatchResult buildMatchResult(String level, String ruleCode, String metricKey,
