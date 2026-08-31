@@ -3,11 +3,13 @@ package com.utc.alert.service.impl;
 import com.utc.alert.common.enums.AlertLevel;
 import com.utc.alert.common.enums.AlertStatus;
 import com.utc.alert.dto.MatchResult;
+import com.utc.alert.dto.RootCauseResult;
 import com.utc.alert.dto.kafka.KafkaMessage;
 import com.utc.alert.dto.kafka.LocationInfo;
 import com.utc.alert.entity.AlertEvent;
 import com.utc.alert.mapper.AlertEventMapper;
 import com.utc.alert.service.AlertEngineService;
+import com.utc.alert.service.RootCauseService;
 import com.utc.alert.service.RuleMatchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +25,7 @@ import java.util.UUID;
 public class AlertEngineServiceImpl implements AlertEngineService {
 
     private final RuleMatchService ruleMatchService;
+    private final RootCauseService rootCauseService;
     private final AlertEventMapper alertEventMapper;
 
     @Override
@@ -63,8 +66,16 @@ public class AlertEngineServiceImpl implements AlertEngineService {
         log.info("Rule matched: eventId={}, ruleCode={}, alertLevel={}",
                 message.getEventId(), highest.getRuleCode(), highest.getAlertLevel());
 
+        RootCauseResult rootCauseResult;
         try {
-            AlertEvent event = buildAlertEvent(message, highest);
+            rootCauseResult = rootCauseService.analyze(message);
+        } catch (Exception e) {
+            log.error("Root cause analysis failed, eventId={}", message.getEventId(), e);
+            rootCauseResult = null;
+        }
+
+        try {
+            AlertEvent event = buildAlertEvent(message, highest, rootCauseResult);
             alertEventMapper.insert(event);
             log.info("Alert event created: alertEventCode={}, alertLevel={}, deviceId={}",
                     event.getAlertEventCode(), event.getAlertLevel(), event.getDeviceId());
@@ -97,7 +108,8 @@ public class AlertEngineServiceImpl implements AlertEngineService {
         return true;
     }
 
-    private AlertEvent buildAlertEvent(KafkaMessage message, MatchResult result) {
+    private AlertEvent buildAlertEvent(KafkaMessage message, MatchResult result,
+                                       RootCauseResult rootCauseResult) {
         LocationInfo location = message.getLocation();
 
         AlertEvent event = new AlertEvent();
@@ -113,6 +125,10 @@ public class AlertEngineServiceImpl implements AlertEngineService {
         event.setMetricKey(result.getMetricKey());
         event.setMetricValue(result.getMetricValue());
         event.setThresholdValue(result.getThresholdValue());
+        if (rootCauseResult != null) {
+            event.setRootCause(rootCauseResult.getRootCauseType());
+            event.setRootCauseDesc(rootCauseResult.getRootCauseDesc());
+        }
         event.setPriorityScore(0);
         event.setMergedCount(1);
         event.setEventTimestamp(message.getTimestamp());

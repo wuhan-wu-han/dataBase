@@ -1,6 +1,7 @@
 package com.utc.alert.service;
 
 import com.utc.alert.dto.MatchResult;
+import com.utc.alert.dto.RootCauseResult;
 import com.utc.alert.dto.kafka.KafkaMessage;
 import com.utc.alert.dto.kafka.LocationInfo;
 import com.utc.alert.entity.AlertEvent;
@@ -31,6 +32,9 @@ class AlertEngineServiceTest {
     private RuleMatchService ruleMatchService;
 
     @Mock
+    private RootCauseService rootCauseService;
+
+    @Mock
     private AlertEventMapper alertEventMapper;
 
     @InjectMocks
@@ -58,11 +62,20 @@ class AlertEngineServiceTest {
         baseMessage.setMetrics(metrics);
     }
 
+    private RootCauseResult buildRootCauseResult(String type, String desc) {
+        RootCauseResult result = new RootCauseResult();
+        result.setRootCauseType(type);
+        result.setRootCauseDesc(desc);
+        return result;
+    }
+
     @Test
     void processMessage_redLevelMatch_savesAlertEvent() {
         MatchResult redResult = buildMatchResult("RED", "RULE-P-001", "pressure",
                 new BigDecimal("4.5"), new BigDecimal("4.0"));
         when(ruleMatchService.matchRules(any())).thenReturn(List.of(redResult));
+        when(rootCauseService.analyze(any()))
+                .thenReturn(buildRootCauseResult("PRESSURE_ABNORMAL", "压力指标异常，需要检查管道压力状态。"));
         when(alertEventMapper.insert(any(AlertEvent.class))).thenReturn(1);
 
         alertEngineService.processMessage(baseMessage);
@@ -83,6 +96,8 @@ class AlertEngineServiceTest {
         assertEquals("pressure", event.getMetricKey());
         assertEquals(new BigDecimal("4.5"), event.getMetricValue());
         assertEquals(new BigDecimal("4.0"), event.getThresholdValue());
+        assertEquals("PRESSURE_ABNORMAL", event.getRootCause());
+        assertEquals("压力指标异常，需要检查管道压力状态。", event.getRootCauseDesc());
         assertEquals(1725100800000L, event.getEventTimestamp());
         assertEquals(0, event.getPriorityScore());
         assertEquals(1, event.getMergedCount());
@@ -96,6 +111,8 @@ class AlertEngineServiceTest {
                 new BigDecimal("4.5"), new BigDecimal("4.0"));
 
         when(ruleMatchService.matchRules(any())).thenReturn(List.of(blueResult, redResult));
+        when(rootCauseService.analyze(any()))
+                .thenReturn(buildRootCauseResult("PRESSURE_ABNORMAL", "压力指标异常"));
         when(alertEventMapper.insert(any(AlertEvent.class))).thenReturn(1);
 
         alertEngineService.processMessage(baseMessage);
@@ -171,6 +188,8 @@ class AlertEngineServiceTest {
         MatchResult result = buildMatchResult("RED", "RULE-P-001", "pressure",
                 new BigDecimal("4.5"), new BigDecimal("4.0"));
         when(ruleMatchService.matchRules(any())).thenReturn(List.of(result));
+        when(rootCauseService.analyze(any()))
+                .thenReturn(buildRootCauseResult("PRESSURE_ABNORMAL", "压力指标异常"));
         when(alertEventMapper.insert(any())).thenThrow(new RuntimeException("DB error"));
 
         assertDoesNotThrow(() -> alertEngineService.processMessage(baseMessage));
@@ -182,6 +201,22 @@ class AlertEngineServiceTest {
 
         assertDoesNotThrow(() -> alertEngineService.processMessage(baseMessage));
         verify(alertEventMapper, never()).insert(any());
+    }
+
+    @Test
+    void processMessage_rootCauseException_stillSavesAlert() {
+        MatchResult result = buildMatchResult("RED", "RULE-P-001", "pressure",
+                new BigDecimal("4.5"), new BigDecimal("4.0"));
+        when(ruleMatchService.matchRules(any())).thenReturn(List.of(result));
+        when(rootCauseService.analyze(any())).thenThrow(new RuntimeException("Root cause error"));
+        when(alertEventMapper.insert(any(AlertEvent.class))).thenReturn(1);
+
+        alertEngineService.processMessage(baseMessage);
+
+        ArgumentCaptor<AlertEvent> captor = ArgumentCaptor.forClass(AlertEvent.class);
+        verify(alertEventMapper).insert(captor.capture());
+        assertNull(captor.getValue().getRootCause());
+        assertNull(captor.getValue().getRootCauseDesc());
     }
 
     private MatchResult buildMatchResult(String level, String ruleCode, String metricKey,
