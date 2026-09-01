@@ -76,6 +76,13 @@ except ImportError:
     from src.python.workorder import router as workorder_router
 app.include_router(workorder_router)
 
+# 注册地下综合管廊管控子模块路由（兼容两种启动方式）
+try:
+    from tunnel_api import router as tunnel_router          # cd src/python 后启动
+except ImportError:
+    from src.python.tunnel_api import router as tunnel_router  # 项目根启动
+app.include_router(tunnel_router)
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================

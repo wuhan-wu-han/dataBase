@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>地下综合管廊管控中心</title>
+<script src="echarts.min.js"></script>
+<style>
+/* ============================================================
+   深地青绿生态风 + 玻璃拟态（Glassmorphism）
+   ============================================================ */
+:root {
+  --bg-deep: #04120f;
+  --bg-mid: #062018;
+  --glass: rgba(16, 44, 38, 0.38);
+  --glass-border: rgba(45, 212, 191, 0.18);
+  --primary: #2dd4bf;
+  --secondary: #34d399;
+  --text-main: #d1fae5;
+  --text-sub: rgba(167, 243, 208, 0.62);
+  --warn: #fbbf24;
+  --crit: #f87171;
+  --radius: 12px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { width: 100vw; height: 100vh; overflow-x: auto; overflow-y: hidden; }
+
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  color: var(--text-main);
+  background: radial-gradient(ellipse at 50% 0%, var(--bg-mid) 0%, var(--bg-deep) 72%);
+  position: relative;
+}
+
+/* 背景网格（隧道坐标感） */
+.bg-grid {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(45, 212, 191, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45, 212, 191, 0.045) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* 上浮微光粒子 */
+.particle {
+  position: fixed; bottom: -20px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.55), transparent 70%);
+  pointer-events: none; z-index: 0;
+  animation: rise linear infinite;
+}
+@keyframes rise {
+  0%   { transform: translateY(0) translateX(0); opacity: 0; }
+  12%  { opacity: 0.8; }
+  88%  { opacity: 0.5; }
+  100% { transform: translateY(-108vh) translateX(30px); opacity: 0; }
+}
+.particle:nth-child(1) { left: 6%;  width: 5px; height: 5px; animation-duration: 17s; animation-delay: 0s; }
+.particle:nth-child(2) { left: 15%; width: 3px; height: 3px; animation-duration: 23s; animation-delay: 3s; }
+.particle:nth-child(3) { left: 27%; width: 6px; height: 6px; animation-duration: 19s; animation-delay: 6s; }
+.particle:nth-child(4) { left: 38%; width: 4px; height: 4px; animation-duration: 26s; animation-delay: 1s; }
+.particle:nth-child(5) { left: 51%; width: 3px; height: 3px; animation-duration: 21s; animation-delay: 8s; }
+.particle:nth-child(6) { left: 63%; width: 6px; height: 6px; animation-duration: 18s; animation-delay: 4s; }
+.particle:nth-child(7) { left: 72%; width: 4px; height: 4px; animation-duration: 24s; animation-delay: 10s; }
+.particle:nth-child(8) { left: 84%; width: 5px; height: 5px; animation-duration: 20s; animation-delay: 2s; }
+.particle:nth-child(9) { left: 93%; width: 3px; height: 3px; animation-duration: 25s; animation-delay: 7s; }
+
+/* ============================================================
+   整体布局
+   ============================================================ */
+.screen {
+  position: relative; z-index: 1;
+  width: 100vw; min-width: 1280px; height: 100vh; padding: 12px 16px;
+  display: grid;
+  grid-template-rows: 56px 84px 1fr 46px;
+  gap: 10px;
+}
+
+/* 标题栏 */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 18px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(14px);
+}
+.header h1 {
+  font-size: 26px; font-weight: 700; letter-spacing: 6px;
+  background: linear-gradient(90deg, #a7f3d0, var(--primary), #34d399);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.header .sub-en {
+  margin-left: 14px; font-size: 11px; letter-spacing: 2px;
+  color: var(--text-sub); text-transform: uppercase;
+}
+.header-right { display: flex; align-items: center; gap: 16px; }
+#clock { font-size: 20px; font-weight: 600; color: var(--primary); font-variant-numeric: tabular-nums; }
+#dateStr { font-size: 12px; color: var(--text-sub); }
+.refresh-btn {
+  padding: 6px 16px; font-size: 13px; cursor: pointer;
+  color: var(--primary); background: rgba(45, 212, 191, 0.08);
+  border: 1px solid rgba(45, 212, 191, 0.35); border-radius: 8px;
+  transition: all 0.25s;
+}
+.refresh-btn:hover { background: rgba(45, 212, 191, 0.2); box-shadow: 0 0 14px rgba(45, 212, 191, 0.35); }
+
+/* KPI 条 */
+.kpi-bar { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; }
+.kpi-card {
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 8px 14px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(14px);
+}
+.kpi-card::before {
+  content: ""; position: absolute; left: 0; top: 15%; bottom: 15%; width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--primary), transparent);
+}
+.kpi-label { font-size: 12px; color: var(--text-sub); margin-bottom: 4px; }
+.kpi-value { font-size: 22px; font-weight: 700; color: var(--text-main); font-variant-numeric: tabular-nums; }
+.kpi-value .unit { font-size: 12px; font-weight: 400; color: var(--text-sub); margin-left: 2px; }
+.kpi-value.warn { color: var(--warn); }
+.kpi-value.crit { color: var(--crit); }
+
+/* 主体三栏 */
+.main-grid {
+  display: grid; grid-template-columns: 400px 1fr 400px;
+  gap: 10px; min-height: 0;
+}
+.col { display: grid; gap: 10px; min-height: 0; }
+.col-left   { grid-template-rows: 1fr 1fr; }
+.col-center { grid-template-rows: 1fr; }
+.col-right  { grid-template-rows: 1.15fr 0.95fr 1fr; }
+
+/* 玻璃面板 */
+.panel {
+  position: relative; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 0 26px rgba(6, 32, 24, 0.4);
+  padding: 10px 12px;
+}
+.panel-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 600; letter-spacing: 1px;
+  color: var(--text-main); padding-bottom: 8px;
+}
+.panel-title::before {
+  content: ""; width: 3px; height: 14px; border-radius: 2px;
+  background: linear-gradient(180deg, var(--primary), var(--secondary));
+  box-shadow: 0 0 8px rgba(45, 212, 191, 0.6);
+}
+.panel-title .tail { margin-left: auto; font-size: 12px; color: var(--text-sub); font-weight: 400; }
+.panel-body { flex: 1; min-height: 0; position: relative; }
+.chart { width: 100%; height: 100%; }
+
+/* 下拉选择 */
+select.glass-select {
+  margin-left: auto; max-width: 170px;
+  background: rgba(6, 32, 24, 0.7); color: var(--text-main);
+  border: 1px solid var(--glass-border); border-radius: 6px;
+  font-size: 12px; padding: 3px 6px; outline: none;
+}
+
+/* 区段详情卡片 */
+.zone-detail {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px; overflow-y: auto; padding-top: 8px; max-height: 100%;
+}
+.sensor-card {
+  background: rgba(6, 32, 24, 0.55);
+  border: 1px solid rgba(45, 212, 191, 0.14);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px;
+}
+.sensor-card .sid { color: var(--primary); font-weight: 600; }
+.sensor-card .sname { color: var(--text-sub); margin-left: 4px; }
+.sensor-card .vals { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.sensor-card .val { font-variant-numeric: tabular-nums; }
+.sensor-card.l1 { border-color: rgba(251, 191, 36, 0.55); }
+.sensor-card.l2 { border-color: rgba(248, 113, 113, 0.7); animation: breath 1.2s ease-in-out infinite; }
+.sensor-card.offline { opacity: 0.45; }
+@keyframes breath { 0%, 100% { box-shadow: 0 0 4px rgba(248,113,113,.3); } 50% { box-shadow: 0 0 14px rgba(248,113,113,.75); } }
+
+/* 表格 */
+.table-wrap { overflow-y: auto; max-height: 100%; }
+table.glass-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.glass-table th {
+  position: sticky; top: 0; z-index: 1;
+  background: rgba(6, 32, 24, 0.92); color: var(--primary);
+  font-weight: 600; text-align: left; padding: 6px 8px;
+}
+.glass-table td { padding: 5px 8px; border-top: 1px solid rgba(45, 212, 191, 0.08); color: var(--text-main); }
+.glass-table tr:hover td { background: rgba(45, 212, 191, 0.06); }
+.tag {
+  display: inline-block; padding: 1px 7px; border-radius: 5px; font-size: 11px;
+}
+.tag-water { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
+.tag-gas   { background: rgba(251, 191, 36, 0.16); color: #fcd34d; }
+.tag-power { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+.tag-comm  { background: rgba(52, 211, 153, 0.16); color: #6ee7b7; }
+
+/* 冲突列表 */
+.conflict-item {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 6px 8px; margin-bottom: 6px; font-size: 12px;
+  background: rgba(6, 32, 24, 0.5);
+  border-radius: 8px; border-left: 3px solid var(--warn);
+}
+.conflict-item.sev-严重 { border-left-color: var(--crit); }
+.conflict-item .ctype { color: var(--warn); font-weight: 600; white-space: nowrap; }
+.conflict-item.sev-严重 .ctype { color: var(--crit); }
+.conflict-item .cmsg { color: var(--text-sub); line-height: 1.45; }
+.list-scroll { overflow-y: auto; max-height: 100%; padding-right: 2px; }
+
+/* 安防事件流 */
+.sec-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; margin-bottom: 5px; font-size: 12px;
+  background: rgba(6, 32, 24, 0.5); border-radius: 8px;
+}
+.sec-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.sec-dot.in    { background: var(--secondary); }
+.sec-dot.out   { background: #60a5fa; }
+.sec-dot.alert { background: var(--crit); animation: breath 1.2s infinite; }
+.sec-time { color: var(--text-sub); margin-left: auto; white-space: nowrap; }
+
+/* 底部告警滚动条 */
+.alarm-bar {
+  display: flex; align-items: center; overflow: hidden;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(14px);
+  padding: 0 14px;
+}
+.alarm-bar .bar-label {
+  flex-shrink: 0; font-size: 13px; font-weight: 600; color: var(--warn);
+  display: flex; align-items: center; gap: 6px; padding-right: 14px;
+  border-right: 1px solid var(--glass-border); margin-right: 14px;
+}
+.alarm-bar .bar-label::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--warn); animation: breath 1.4s infinite;
+}
+.ticker-viewport { flex: 1; overflow: hidden; }
+.ticker-track {
+  display: inline-flex; gap: 44px; white-space: nowrap;
+  animation: ticker 40s linear infinite;
+}
+@keyframes ticker { 0% { transform: translateX(60%); } 100% { transform: translateX(-100%); } }
+.ticker-item { font-size: 13px; color: var(--text-sub); }
+.ticker-item .t-time { color: rgba(167, 243, 208, 0.4); margin-right: 6px; }
+.ticker-item.l1 { color: var(--warn); }
+.ticker-item.l2 { color: var(--crit); font-weight: 600; text-shadow: 0 0 10px rgba(248,113,113,.55); }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-thumb { background: rgba(45, 212, 191, 0.3); border-radius: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<span class="particle"></span><span class="particle"></span><span class="particle"></span>
+<span class="particle"></span><span class="particle"></span><span class="particle"></span>
+<span class="particle"></span><span class="particle"></span><span class="particle"></span>
+
+<div class="screen">
+  <!-- 标题栏 -->
+  <header class="header">
+    <div style="display:flex;align-items:baseline;">
+      <h1>地下综合管廊管控中心</h1>
+      <span class="sub-en">Utility Tunnel Control Center</span>
+    </div>
+    <div class="header-right">
+      <span id="dateStr"></span>
+      <span id="clock">--:--:--</span>
+      <button class="refresh-btn" onclick="refreshAll()">刷 新</button>
+    </div>
+  </header>
+
+  <!-- KPI 条 -->
+  <div class="kpi-bar">
+    <div class="kpi-card"><span class="kpi-label">点位在线率</span><span class="kpi-value" id="kpiOnline">--<span class="unit">%</span></span></div>
+    <div class="kpi-card"><span class="kpi-label">今日告警</span><span class="kpi-value" id="kpiAlarms">--<span class="unit">条</span></span></div>
+    <div class="kpi-card"><span class="kpi-label">未处理告警</span><span class="kpi-value" id="kpiUnhandled">--<span class="unit">条</span></span></div>
+    <div class="kpi-card"><span class="kpi-label">舱内人数</span><span class="kpi-value" id="kpiPeople">--<span class="unit">人</span></span></div>
+    <div class="kpi-card"><span class="kpi-label">管线冲突</span><span class="kpi-value" id="kpiConflicts">--<span class="unit">项</span></span></div>
+    <div class="kpi-card"><span class="kpi-label">环境健康分</span><span class="kpi-value" id="kpiHealth">--</span></div>
+    <div class="kpi-card"><span class="kpi-label">O₂ 最低值</span><span class="kpi-value" id="kpiO2">--<span class="unit">%VOL</span></span></div>
+    <div class="kpi-card"><span class="kpi-label">应急广播</span><span class="kpi-value" id="kpiBroadcast" style="font-size:17px;">--</span></div>
+  </div>
+
+  <!-- 主体三栏 -->
+  <div class="main-grid">
+    <!-- 左栏 -->
+    <div class="col col-left">
+      <section class="panel">
+        <div class="panel-title">环境总览 <span class="tail">全舱段最差值</span></div>
+        <div class="panel-body"><div id="gaugeChart" class="chart"></div></div>
+      </section>
+      <section class="panel">
+        <div class="panel-title">气体浓度趋势
+          <select id="trendSensor" class="glass-select" onchange="onTrendSensorChange()"></select>
+        </div>
+        <div class="panel-body"><div id="trendChart" class="chart"></div></div>
+      </section>
+    </div>
+
+    <!-- 中栏 -->
+    <div class="col col-center">
+      <section class="panel">
+        <div class="panel-title">管廊剖面态势
+          <span class="tail" id="zoneTitle">点击区段查看详情</span>
+        </div>
+        <div class="panel-body" style="display:grid;grid-template-rows:1.15fr 1fr;gap:6px;">
+          <div id="sectionChart" class="chart"></div>
+          <div id="zoneDetail" class="zone-detail"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 右栏 -->
+    <div class="col col-right">
+      <section class="panel">
+        <div class="panel-title">入廊管线台账 <span class="tail" id="pipelineCount"></span></div>
+        <div class="panel-body table-wrap" id="pipelineTable"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-title">空间冲突检测 <span class="tail" id="conflictCount"></span></div>
+        <div class="panel-body list-scroll" id="conflictList"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-title">安防事件 <span class="tail" id="secTail"></span></div>
+        <div class="panel-body list-scroll" id="securityFeed"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 底部告警滚动条 -->
+  <footer class="alarm-bar">
+    <span class="bar-label">实时告警</span>
+    <div class="ticker-viewport"><div class="ticker-track" id="alarmTicker"><span class="ticker-item">等待数据…</span></div></div>
+  </footer>
+</div>
+
+<script>
+/* ============================================================
+   数据与状态
+   ============================================================ */
+const CABIN_NAMES = { EL: '电力舱', GS: '燃气舱', WS: '水信舱' };
+const CABIN_ORDER = ['EL', 'GS', 'WS'];
+const ZONE_COUNT = 6;
+const LEVEL_COLORS = ['#2dd4bf', '#fbbf24', '#f87171'];
+const GAUGE_METRICS = ['temperature', 'humidity', 'o2', 'co', 'ch4', 'water_level'];
+
+const state = {
+  overview: null, env: [], cabins: [], alarms: [],
+  pipelines: [], conflicts: [], security: null, thresholds: null,
+  selectedZone: { cabin: 'EL', zone: 1 },
+  trendSensor: 'GL-GS01-CH401',
+  tickerKey: ''
+};
+
+const charts = {};
+let pageVisible = true;
+
+/* ============================================================
+   基础工具
+   ============================================================ */
+async function fetchData(url) {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const text = value == null ? '--' : String(value);
+  const unit = el.querySelector('.unit');
+  if (unit && el.childNodes.length && el.childNodes[0].nodeType === 3) {
+    el.childNodes[0].nodeValue = text;
+  } else {
+    el.textContent = text;
+  }
+}
+
+function levelColor(level) { return LEVEL_COLORS[level] || LEVEL_COLORS[0]; }
+
+function metricName(metric) {
+  return (state.thresholds && state.thresholds.metrics[metric])
+    ? state.thresholds.metrics[metric].name : metric;
+}
+
+/* ============================================================
+   加载器（分级轮询，请求未回包跳过本轮）
+   ============================================================ */
+function makeLoader(fn, intervalMs) {
+  let busy = false;
+  const run = async () => {
+    if (!pageVisible || busy) return;
+    busy = true;
+    try { await fn(); } catch (e) { console.warn('loader error:', e); }
+    busy = false;
+  };
+  run();
+  setInterval(run, intervalMs);
+}
+
+async function loadThresholds() {
+  const data = await fetchData('/tunnel/env/thresholds');
+  if (data) state.thresholds = data;
+}
+
+async function loadOverview() {
+  const data = await fetchData('/tunnel/overview');
+  if (!data) return;
+  state.overview = data;
+  renderKpis(data);
+}
+
+async function loadCabins() {
+  const data = await fetchData('/tunnel/cabins');
+  if (data) state.cabins = data;
+}
+
+async function loadEnv() {
+  const data = await fetchData('/tunnel/env/realtime');
+  if (!data) return;
+  state.env = data.sensors || [];
+  renderGauges();
+  renderSection();
+  renderZoneDetail();
+  fillTrendSelector();
+}
+
+async function loadAlarms() {
+  const data = await fetchData('/tunnel/alarms?limit=20');
+  if (!data) return;
+  state.alarms = data.alarms || [];
+  renderTicker();
+}
+
+async function loadTrend() {
+  const data = await fetchData('/tunnel/env/trend?sensor_id=' +
+    encodeURIComponent(state.trendSensor) + '&points=120');
+  if (data) renderTrend(data);
+}
+
+async function loadPipelines() {
+  const [pipes, conflicts] = await Promise.all([
+    fetchData('/tunnel/pipelines'),
+    fetchData('/tunnel/pipelines/conflicts')
+  ]);
+  if (pipes) { state.pipelines = pipes.pipelines || []; renderPipelineTable(); }
+  if (conflicts) { state.conflicts = conflicts.conflicts || []; renderConflicts(); }
+}
+
+async function loadSecurity() {
+  const [overview, access, intrusions] = await Promise.all([
+    fetchData('/tunnel/security/overview'),
+    fetchData('/tunnel/security/access?limit=12'),
+    fetchData('/tunnel/security/intrusions?limit=8')
+  ]);
+  if (!overview) return;
+  state.security = { overview, records: access ? access.records : [], intrusions: intrusions ? intrusions.intrusions : [] };
+  renderSecurityFeed();
+}
+
+function refreshAll() {
+  loadOverview(); loadCabins(); loadEnv(); loadAlarms();
+  loadTrend(); loadPipelines(); loadSecurity();
+}
+
+/* ============================================================
+   渲染：KPI
+   ============================================================ */
+function renderKpis(ov) {
+  setText('kpiOnline', (ov.online_rate * 100).toFixed(1));
+  setText('kpiAlarms', ov.alarms_today);
+  setText('kpiUnhandled', ov.unhandled_alarms);
+  setText('kpiPeople', ov.in_tunnel_count);
+  setText('kpiConflicts', ov.conflict_count);
+  setText('kpiHealth', ov.env_health_score);
+  setText('kpiO2', ov.o2_min == null ? '--' : ov.o2_min.toFixed(1));
+  setText('kpiBroadcast', ov.broadcast_status);
+  const un = document.getElementById('kpiUnhandled');
+  un.className = 'kpi-value' + (ov.unhandled_alarms > 0 ? ' warn' : '');
+  const cf = document.getElementById('kpiConflicts');
+  cf.className = 'kpi-value' + (ov.conflict_count > 0 ? ' crit' : '');
+}
+
+/* ============================================================
+   渲染：环境总览仪表盘（6 联进度环）
+   ============================================================ */
+function worstMetricValue(metric) {
+  let worst = null;
+  for (const s of state.env) {
+    if (!s.online || !(metric in s.metrics)) continue;
+    const v = s.metrics[metric].value;
+    if (worst == null) { worst = v; continue; }
+    worst = (metric === 'o2') ? Math.min(worst, v) : Math.max(worst, v);
+  }
+  return worst;
+}
+
+function metricLevel(metric, value) {
+  if (!state.thresholds) return 0;
+  const rule = state.thresholds.thresholds[metric];
+  if (!rule) return 0;
+  if (rule.crit_high != null && value >= rule.crit_high) return 2;
+  if (rule.warn_high != null && value >= rule.warn_high) return 1;
+  if (rule.crit_low != null && value <= rule.crit_low) return 2;
+  if (rule.warn_low != null && value <= rule.warn_low) return 1;
+  return 0;
+}
+
+function gaugePercent(metric, value) {
+  if (!state.thresholds) return 0;
+  const rule = state.thresholds.thresholds[metric];
+  if (metric === 'o2') return Math.min(100, Math.max(0, (value / 23.5) * 100));
+  const ref = rule.crit_high || rule.warn_high || 1;
+  return Math.min(100, Math.max(0, (value / ref) * 100));
+}
+
+function renderGauges() {
+  const option = { series: [] };
+  const positions = [
+    ['16.6%', '28%'], ['50%', '28%'], ['83.3%', '28%'],
+    ['16.6%', '78%'], ['50%', '78%'], ['83.3%', '78%']
+  ];
+  GAUGE_METRICS.forEach((metric, i) => {
+    const value = worstMetricValue(metric);
+    const level = value == null ? 0 : metricLevel(metric, value);
+    const color = levelColor(level);
+    option.series.push({
+      type: 'gauge',
+      center: positions[i], radius: '36%',
+      startAngle: 90, endAngle: -270,
+      pointer: { show: false }, anchor: { show: false },
+      progress: { show: true, width: 7, roundCap: true,
+        itemStyle: { color: color, shadowBlur: 8, shadowColor: color } },
+      axisLine: { lineStyle: { width: 7, color: [[1, 'rgba(45,212,191,0.12)']] } },
+      axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
+      detail: {
+        offsetCenter: [0, '2%'], fontSize: 13, fontWeight: 700, color: color,
+        formatter: () => (value == null ? '--' : value)
+      },
+      title: { offsetCenter: [0, '34%'], fontSize: 11, color: 'rgba(167,243,208,0.62)' },
+      data: [{ value: gaugePercent(metric, value == null ? 0 : value),
+               name: metricName(metric) }]
+    });
+  });
+  charts.gauge.setOption(option);
+}
+
+/* ============================================================
+   渲染：管廊剖面态势图
+   ============================================================ */
+function zoneWorst(cabin, zone) {
+  let level = 0, worstMetric = null, offline = 0, total = 0;
+  for (const s of state.env) {
+    if (s.cabin !== cabin || s.zone !== zone) continue;
+    total++;
+    if (!s.online) { offline++; continue; }
+    if (s.level > level) {
+      level = s.level;
+      worstMetric = Object.keys(s.metrics)
+        .sort((a, b) => s.metrics[b].level - s.metrics[a].level)[0];
+    }
+  }
+  return { level, worstMetric, offline, total };
+}
+
+function renderSection() {
+  const data = [];
+  CABIN_ORDER.forEach((cabin, ci) => {
+    for (let z = 1; z <= ZONE_COUNT; z++) {
+      const info = zoneWorst(cabin, z);
+      data.push({ value: [z - 1, 2 - ci], cabin, zone: z, info });
+    }
+  });
+  const selected = state.selectedZone;
+  charts.section.setOption({
+    grid: { left: 74, right: 24, top: 30, bottom: 16 },
+    xAxis: {
+      type: 'category', position: 'top',
+      data: Array.from({ length: ZONE_COUNT }, (_, i) => 'Z' + String(i + 1).padStart(2, '0')),
+      axisLine: { show: false }, axisTick: { show: false },
+      axisLabel: { color: 'rgba(167,243,208,0.62)', fontSize: 11 }
+    },
+    yAxis: {
+      type: 'category', data: ['水信舱', '燃气舱', '电力舱'],
+      axisLine: { show: false }, axisTick: { show: false },
+      axisLabel: { color: '#a7f3d0', fontSize: 12, fontWeight: 600 }
+    },
+    tooltip: {
+      formatter: (p) => {
+        const d = p.data;
+        const names = { 0: '正常', 1: '预警', 2: '严重' };
+        return CABIN_NAMES[d.cabin] + ' ' + 'Z' + String(d.zone).padStart(2, '0') +
+          '<br/>状态：' + names[d.info.level] +
+          (d.info.worstMetric ? '<br/>越限指标：' + metricName(d.info.worstMetric) : '') +
+          (d.info.offline ? '<br/>离线点位：' + d.info.offline + '/' + d.info.total : '');
+      }
+    },
+    series: [{
+      type: 'custom',
+      data,
+      renderItem: (params, api) => {
+        const coord = api.coord(api.value());
+        const size = api.size([1, 1]);
+        const w = size[0] * 0.86, h = size[1] * 0.74;
+        const d = data[params.dataIndex];
+        const isSelected = selected.cabin === d.cabin && selected.zone === d.zone;
+        const color = levelColor(d.info.level);
+        return {
+          type: 'rect',
+          shape: { x: coord[0] - w / 2, y: coord[1] - h / 2, width: w, height: h, r: 6 },
+          style: {
+            fill: d.info.level === 0 ? 'rgba(45,212,191,0.16)' : color + '55',
+            stroke: isSelected ? '#ecfdf5' : color + 'aa',
+            lineWidth: isSelected ? 2.5 : 1.2,
+            shadowBlur: d.info.level === 2 ? 16 : 6,
+            shadowColor: color + '88'
+          }
+        };
+      },
+      encode: { x: 0, y: 1 }
+    }]
+  });
+}
+
+function renderZoneDetail() {
+  const { cabin, zone } = state.selectedZone;
+  const sensors = state.env.filter(s => s.cabin === cabin && s.zone === zone);
+  document.getElementById('zoneTitle').textContent =
+    CABIN_NAMES[cabin] + ' · Z' + String(zone).padStart(2, '0') +
+    '（' + sensors.filter(s => s.online).length + '/' + sensors.length + ' 在线）';
+  const html = sensors.map(s => {
+    const cls = !s.online ? 'offline' : (s.level === 2 ? 'l2' : s.level === 1 ? 'l1' : '');
+    const vals = Object.values(s.metrics).map(m =>
+      '<span class="val" style="color:' + levelColor(m.level) + '">' +
+      m.value + '<small>' + m.unit + '</small></span>').join('');
+    return '<div class="sensor-card ' + cls + '">' +
+      '<span class="sid">' + s.sensor_id + '</span><span class="sname">' + s.sensor_name + '</span>' +
+      '<div class="vals">' + (s.online ? vals : '<span style="color:#6b7280;">离线</span>') + '</div></div>';
+  }).join('');
+  document.getElementById('zoneDetail').innerHTML =
+    html || '<div style="color:var(--text-sub);font-size:12px;">暂无点位</div>';
+}
+
+/* ============================================================
+   渲染：气体趋势
+   ============================================================ */
+function fillTrendSelector() {
+  const sel = document.getElementById('trendSensor');
+  if (sel.options.length > 0) return;
+  const gasTypes = { CO: '一氧化碳', H2S: '硫化氢', CH4: '甲烷' };
+  state.env.filter(s => gasTypes[s.sensor_type]).forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.sensor_id;
+    opt.textContent = s.sensor_id + ' · ' + CABIN_NAMES[s.cabin] + ' Z' + String(s.zone).padStart(2, '0');
+    sel.appendChild(opt);
+  });
+  if ([...sel.options].some(o => o.value === state.trendSensor)) sel.value = state.trendSensor;
+}
+
+function onTrendSensorChange() {
+  state.trendSensor = document.getElementById('trendSensor').value;
+  loadTrend();
+}
+
+function renderTrend(data) {
+  const series = data.series.map(s => {
+    const rule = state.thresholds ? state.thresholds.thresholds[s.metric] : null;
+    const markLine = rule ? {
+      silent: true, symbol: 'none',
+      lineStyle: { type: 'dashed', width: 1 },
+      label: { fontSize: 10, color: 'rgba(167,243,208,0.55)' },
+      data: [
+        rule.warn_high != null ? { yAxis: rule.warn_high, name: '预警', lineStyle: { color: '#fbbf24' } } : null,
+        rule.crit_high != null ? { yAxis: rule.crit_high, name: '严重', lineStyle: { color: '#f87171' } } : null
+      ].filter(Boolean)
+    } : undefined;
+    return {
+      name: s.name + (s.unit ? '(' + s.unit + ')' : ''),
+      type: 'line', smooth: true, showSymbol: false,
+      data: s.values, markLine,
+      lineStyle: { width: 2 },
+      areaStyle: { opacity: 0.12 }
+    };
+  });
+  charts.trend.setOption({
+    color: ['#2dd4bf', '#34d399', '#a3e635'],
+    tooltip: { trigger: 'axis' },
+    legend: { textStyle: { color: 'rgba(167,243,208,0.7)', fontSize: 11 }, top: 0 },
+    grid: { left: 44, right: 16, top: 30, bottom: 24 },
+    xAxis: {
+      type: 'category', boundaryGap: false,
+      data: data.series.length ? data.series[0].times : [],
+      axisLabel: { color: 'rgba(167,243,208,0.5)', fontSize: 10,
+        formatter: v => v.slice(11, 16) },
+      axisLine: { lineStyle: { color: 'rgba(45,212,191,0.2)' } }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: 'rgba(167,243,208,0.5)', fontSize: 10 },
+      splitLine: { lineStyle: { color: 'rgba(45,212,191,0.08)' } }
+    },
+    series
+  });
+}
+
+/* ============================================================
+   渲染：管线台账 / 冲突 / 安防
+   ============================================================ */
+const TYPE_TAG = { '供水': 'tag-water', '燃气': 'tag-gas', '电力': 'tag-power', '通信': 'tag-comm' };
+
+function renderPipelineTable() {
+  const rows = state.pipelines.map(p =>
+    '<tr><td>' + p.pipeline_id + '</td>' +
+    '<td><span class="tag ' + (TYPE_TAG[p.pipeline_type] || '') + '">' + p.pipeline_type + '</span></td>' +
+    '<td>' + (CABIN_NAMES[p.cabin] || p.cabin) + '</td>' +
+    '<td>Z' + String(p.zone_start).padStart(2, '0') + '~Z' + String(p.zone_end).padStart(2, '0') + '</td>' +
+    '<td>' + p.diameter_mm + '</td>' +
+    '<td>' + p.status + '</td></tr>').join('');
+  document.getElementById('pipelineTable').innerHTML =
+    '<table class="glass-table"><thead><tr><th>编号</th><th>类型</th><th>舱室</th>' +
+    '<th>区段</th><th>管径mm</th><th>状态</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  setText('pipelineCount', '共 ' + state.pipelines.length + ' 条');
+}
+
+function renderConflicts() {
+  const names = {
+    INCOMPATIBLE_CABIN: '舱室冲突', GAS_POWER_COEXIST: '燃电同舱',
+    SPACING_VIOLATION: '间距不足', CAPACITY_OVERLOAD: '容量超限'
+  };
+  const html = state.conflicts.map(c =>
+    '<div class="conflict-item sev-' + c.severity + '">' +
+    '<span class="ctype">[' + (names[c.conflict_type] || c.conflict_type) + ']</span>' +
+    '<span class="cmsg">' + c.message + '</span></div>').join('');
+  document.getElementById('conflictList').innerHTML =
+    html || '<div style="color:var(--text-sub);font-size:12px;padding:8px;">未检测到冲突</div>';
+  setText('conflictCount', state.conflicts.length + ' 项');
+}
+
+function renderSecurityFeed() {
+  const sec = state.security;
+  const events = [];
+  sec.records.forEach(r => events.push({
+    time: r.time, sortKey: r.time,
+    dot: r.direction === '进' ? 'in' : 'out',
+    text: r.gate_name + ' · ' + r.person_name + '(' + r.person_id + ') ' +
+      r.direction + '廊' + (r.authorized ? '' : ' · 未授权'),
+    alert: !r.authorized
+  }));
+  sec.intrusions.forEach(i => events.push({
+    time: i.time, sortKey: i.time, dot: 'alert',
+    text: '入侵检测 · ' + i.zone_name + ' · ' + i.status, alert: true
+  }));
+  events.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+  const html = events.slice(0, 14).map(e =>
+    '<div class="sec-item"><span class="sec-dot ' + (e.alert ? 'alert' : e.dot) + '"></span>' +
+    '<span>' + e.text + '</span><span class="sec-time">' + e.time.slice(11) + '</span></div>').join('');
+  document.getElementById('securityFeed').innerHTML =
+    html || '<div style="color:var(--text-sub);font-size:12px;">暂无事件</div>';
+  setText('secTail', '在廊 ' + sec.overview.in_tunnel_count + ' 人');
+}
+
+/* ============================================================
+   渲染：告警滚动条
+   ============================================================ */
+function renderTicker() {
+  const key = state.alarms.length + ':' +
+    (state.alarms.length ? state.alarms[0].alarm_id : '');
+  if (key === state.tickerKey) return;
+  state.tickerKey = key;
+  const track = document.getElementById('alarmTicker');
+  if (!state.alarms.length) {
+    track.innerHTML = '<span class="ticker-item">当前无告警，管廊运行正常</span>';
+    return;
+  }
+  track.innerHTML = state.alarms.map(a =>
+    '<span class="ticker-item l' + a.level + '">' +
+    '<span class="t-time">' + a.time.slice(11, 16) + '</span>' +
+    (a.cabin ? CABIN_NAMES[a.cabin] + ' ' + a.zone_code + ' ' : '') +
+    a.desc + (a.metric && a.metric !== 'access' ? ' ' + a.value + a.unit : '') +
+    '（' + a.status + '）</span>').join('');
+}
+
+/* ============================================================
+   时钟与初始化
+   ============================================================ */
+function updateClock() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  setText('clock', pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()));
+  const weeks = ['日', '一', '二', '三', '四', '五', '六'];
+  setText('dateStr', now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' +
+    pad(now.getDate()) + ' 周' + weeks[now.getDay()]);
+}
+
+function initCharts() {
+  ['gauge', 'trend', 'section'].forEach(id => {
+    charts[id] = echarts.init(document.getElementById(id + 'Chart'));
+  });
+  charts.section.on('click', params => {
+    if (params.data && params.data.cabin) {
+      state.selectedZone = { cabin: params.data.cabin, zone: params.data.zone };
+      renderSection();
+      renderZoneDetail();
+    }
+  });
+  window.addEventListener('resize', () => {
+    Object.values(charts).forEach(c => c.resize());
+  });
+}
+
+async function init() {
+  initCharts();
+  updateClock();
+  setInterval(updateClock, 1000);
+  await loadThresholds();
+  makeLoader(loadEnv, 5000);
+  makeLoader(loadAlarms, 5000);
+  makeLoader(loadOverview, 10000);
+  makeLoader(loadCabins, 10000);
+  makeLoader(loadSecurity, 10000);
+  makeLoader(loadTrend, 15000);
+  makeLoader(loadPipelines, 60000);
+}
+
+document.addEventListener('visibilitychange', () => {
+  pageVisible = !document.hidden;
+});
+
+init();
+</script>
+</body>
+</html>
