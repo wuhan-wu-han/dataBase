@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>实时安全监测 - 燃气管网安全风控系统</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/lib/echarts.min.js"></script>
+</head>
+<body>
+<div class="layout">
+  <aside id="sidebar"></aside>
+  <main>
+    <div class="page-header">
+      <h1>1. 实时安全监测</h1>
+      <p>燃气浓度、压力、流量、振动、腐蚀速率、位移六类指标毫秒级监测。数据由后端模拟线程每秒写入，页面每 2 秒自动刷新；
+        可点击「模拟泄漏 / 模拟施工振动」注入故障，观察报警触发。</p>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="grid cols-4" id="stat-cards">
+      <div class="stat-card"><div class="label">监测站</div><div class="value accent" id="st-sensors">-</div></div>
+      <div class="stat-card"><div class="label">当前报警测站</div><div class="value red" id="st-alarming">-</div></div>
+      <div class="stat-card"><div class="label">最大浓度 %LEL</div><div class="value yellow" id="st-lel">-</div></div>
+      <div class="stat-card"><div class="label">运行压力范围 MPa</div><div class="value green" id="st-pressure">-</div></div>
+    </div>
+
+    <!-- 仪表盘 -->
+    <div class="card">
+      <h3>重点测站仪表 <small>选择测站查看实时仪表</small></h3>
+      <div class="form" style="margin-bottom:8px">
+        <label>监测站
+          <select id="sensor-select"></select>
+        </label>
+        <label>故障注入
+          <select id="fault-sensor"></select>
+        </label>
+        <label>强度
+          <select id="fault-magnitude">
+            <option value="0.4">0.4</option>
+            <option value="0.8" selected>0.8</option>
+            <option value="1.0">1.0</option>
+          </select>
+        </label>
+        <button class="btn danger" id="btn-leak">模拟泄漏</button>
+        <button class="btn" style="background:var(--orange)" id="btn-disturb">模拟施工振动</button>
+        <button class="btn ghost" id="btn-clear">恢复正常工况</button>
+      </div>
+      <div class="grid cols-3">
+        <div id="gauge-lel" class="chart short"></div>
+        <div id="gauge-pressure" class="chart short"></div>
+        <div id="gauge-flow" class="chart short"></div>
+      </div>
+    </div>
+
+    <!-- 实时曲线 -->
+    <div class="card">
+      <h3>实时趋势曲线 <small>最近 10 分钟 · 2 秒自动刷新</small></h3>
+      <div id="chart-history" class="chart tall"></div>
+    </div>
+
+    <!-- 报警表 -->
+    <div class="card">
+      <h3>实时报警记录</h3>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>时间</th><th>测站</th><th>级别</th><th>报警内容</th></tr></thead>
+          <tbody id="alarm-body"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/common.js"></script>
+<script src="js/dashboard.js"></script>
+</body>
+</html>
