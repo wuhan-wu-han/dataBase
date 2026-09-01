@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>危废/化学品输送管控 - 可视化大屏</title>
+    <script src="echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0f1e;
+            color: #e2e8f0;
+            font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+            overflow: hidden;
+        }
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: 70px 1fr 1fr 50px;
+            gap: 12px;
+            padding: 12px;
+            height: 100vh;
+        }
+        .header {
+            grid-column: 1 / -1;
+            background: linear-gradient(90deg, rgba(15,23,42,0.95) 0%, rgba(239,68,68,0.3) 50%, rgba(15,23,42,0.95) 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            border: 1px solid rgba(239,68,68,0.3);
+        }
+        .header h1 {
+            font-size: 26px;
+            background: linear-gradient(90deg, #ef4444, #f97316, #ef4444);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 4px;
+        }
+        .header .time {
+            position: absolute;
+            left: 24px;
+            font-size: 13px;
+            color: #64748b;
+        }
+        .header .status-badge {
+            position: absolute;
+            right: 24px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #22c55e;
+        }
+        .header .status-badge::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: #22c55e;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .panel {
+            background: rgba(15, 23, 42, 0.85);
+            border-radius: 10px;
+            padding: 14px;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+        }
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #f97316;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(239, 68, 68, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .panel-title::before {
+            content: '';
+            width: 3px;
+            height: 14px;
+            background: #f97316;
+            border-radius: 2px;
+        }
+        .chart-container {
+            flex: 1;
+            min-height: 0;
+        }
+        .media-monitor { grid-column: 1/5; grid-row: 2/3; }
+        .route-compliance { grid-column: 5/9; grid-row: 2/3; }
+        .emergency-panel { grid-column: 9/13; grid-row: 2/3; }
+        .traceability { grid-column: 1/5; grid-row: 3/4; }
+        .corrosion-eval { grid-column: 5/9; grid-row: 3/4; }
+        .compliance-ledger { grid-column: 9/13; grid-row: 3/4; }
+        .footer {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            font-size: 12px;
+            color: #475569;
+        }
+        .kpi-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .kpi-card {
+            flex: 1;
+            background: linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(239,68,68,0.05) 100%);
+            border: 1px solid rgba(239,68,68,0.2);
+            border-radius: 8px;
+            padding: 10px 8px;
+            text-align: center;
+        }
+        .kpi-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #f97316;
+        }
+        .kpi-label {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .media-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .media-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            background: rgba(239, 68, 68, 0.08);
+            border-radius: 6px;
+            border: 1px solid rgba(239, 68, 68, 0.15);
+        }
+        .media-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+        .media-info { flex: 1; }
+        .media-name { font-size: 13px; color: #e2e8f0; }
+        .media-detail { font-size: 11px; color: #64748b; }
+        .media-status {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+        .status-normal { background: rgba(34,197,94,0.2); color: #22c55e; }
+        .status-warning { background: rgba(245,158,11,0.2); color: #f59e0b; }
+        .status-danger { background: rgba(239,68,68,0.2); color: #ef4444; }
+        .route-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .route-item {
+            padding: 8px 10px;
+            background: rgba(239, 68, 68, 0.06);
+            border-radius: 6px;
+            border: 1px solid rgba(239, 68, 68, 0.12);
+        }
+        .route-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        .route-name { font-size: 12px; color: #94a3b8; }
+        .route-status { font-size: 11px; font-weight: 600; }
+        .route-detail { font-size: 11px; color: #64748b; }
+        .valve-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .valve-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: rgba(239, 68, 68, 0.06);
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .valve-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        .valve-open { background: #22c55e; }
+        .valve-closed { background: #ef4444; }
+        .valve-name { flex: 1; color: #94a3b8; }
+        .valve-status { color: #64748b; font-size: 11px; }
+        .trace-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .trace-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            background: rgba(239, 68, 68, 0.06);
+            border-radius: 6px;
+            border: 1px solid rgba(239, 68, 68, 0.12);
+        }
+        .trace-seq {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(249, 115, 22, 0.2);
+            color: #f97316;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .trace-info { flex: 1; }
+        .trace-node { font-size: 13px; color: #e2e8f0; }
+        .trace-time { font-size: 11px; color: #64748b; }
+        .trace-amount { font-size: 12px; color: #f97316; font-weight: 600; }
+        .corrosion-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .corrosion-item {
+            padding: 8px 10px;
+            background: rgba(239, 68, 68, 0.06);
+            border-radius: 6px;
+            border: 1px solid rgba(239, 68, 68, 0.12);
+        }
+        .corrosion-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        .corrosion-name { font-size: 12px; color: #94a3b8; }
+        .corrosion-life { font-size: 14px; font-weight: bold; }
+        .corrosion-bar {
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .corrosion-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.5s ease;
+        }
+        .ledger-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .ledger-item {
+            padding: 8px 10px;
+            background: rgba(239, 68, 68, 0.06);
+            border-radius: 6px;
+            border: 1px solid rgba(239, 68, 68, 0.12);
+        }
+        .ledger-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        .ledger-type { font-size: 13px; color: #e2e8f0; }
+        .ledger-count { font-size: 12px; color: #f97316; font-weight: 600; }
+        .ledger-detail { font-size: 11px; color: #64748b; }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <span class="time" id="currentTime">--</span>
+            <h1>危废/化学品输送管控平台</h1>
+            <span class="status-badge">系统运行中</span>
+        </div>
+
+        <div class="panel media-monitor">
+            <div class="panel-title">介质状态监测</div>
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-value" id="totalMedia">--</div>
+                    <div class="kpi-label">介质种类</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="activeRoutes">--</div>
+                    <div class="kpi-label">活跃路线</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="alertCount">--</div>
+                    <div class="kpi-label">当前告警</div>
+                </div>
+            </div>
+            <div class="media-list" id="mediaList"></div>
+        </div>
+
+        <div class="panel route-compliance">
+            <div class="panel-title">输送路径合规校验</div>
+            <div class="chart-container" id="routeChart"></div>
+        </div>
+
+        <div class="panel emergency-panel">
+            <div class="panel-title">泄漏应急封堵</div>
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-value" id="totalValves">--</div>
+                    <div class="kpi-label">阀门总数</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="valveOpen">--</div>
+                    <div class="kpi-label">开启状态</div>
+                </div>
+            </div>
+            <div class="valve-list" id="valveList"></div>
+        </div>
+
+        <div class="panel traceability">
+            <div class="panel-title">全流程溯源管理</div>
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-value" id="totalTraces">--</div>
+                    <div class="kpi-label">溯源记录</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="completedTraces">--</div>
+                    <div class="kpi-label">已完成</div>
+                </div>
+            </div>
+            <div class="trace-list" id="traceList"></div>
+        </div>
+
+        <div class="panel corrosion-eval">
+            <div class="panel-title">管段腐蚀余量评估</div>
+            <div class="chart-container" id="corrosionChart"></div>
+        </div>
+
+        <div class="panel compliance-ledger">
+            <div class="panel-title">环保合规台账</div>
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-value" id="ledgerTotal">--</div>
+                    <div class="kpi-label">台账记录</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="complianceRate">--</div>
+                    <div class="kpi-label">合规率</div>
+                </div>
+            </div>
+            <div class="ledger-list" id="ledgerList"></div>
+        </div>
+
+        <div class="footer">
+            <span>危废/化学品输送管控子模块 v1.0</span>
+            <span>|</span>
+            <span>介质监测: <span id="footerMedia">--</span> 种</span>
+            <span>|</span>
+            <span>输送路线: <span id="footerRoutes">--</span> 条</span>
+            <span>|</span>
+            <span>应急阀门: <span id="footerValves">--</span> 个</span>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let routeChart, corrosionChart;
+
+        function initCharts() {
+            routeChart = echarts.init(document.getElementById('routeChart'));
+            corrosionChart = echarts.init(document.getElementById('corrosionChart'));
+        }
+
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('currentTime').textContent =
+                now.toLocaleString('zh-CN', { hour12: false });
+        }
+
+        function formatNumber(num) {
+            if (num >= 10000) return (num / 10000).toFixed(1) + '万';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+            return num.toString();
+        }
+
+        async function fetchOverview() {
+            try {
+                const res = await fetch(API_BASE + '/hazmat/overview');
+                const data = await res.json();
+                document.getElementById('totalMedia').textContent = data.media_types_count;
+                document.getElementById('activeRoutes').textContent = data.active_routes;
+                document.getElementById('alertCount').textContent = data.active_alerts;
+                document.getElementById('footerMedia').textContent = data.media_types_count;
+                document.getElementById('footerRoutes').textContent = data.total_routes;
+                document.getElementById('footerValves').textContent = data.total_valves;
+            } catch (e) {
+                console.error('Failed to fetch overview:', e);
+            }
+        }
+
+        async function fetchMediaList() {
+            try {
+                const res = await fetch(API_BASE + '/hazmat/media');
+                const data = await res.json();
+                const icons = { ORG_SOLVENT: '🧪', ACID_BASE: '⚗️', HEAVY_METAL: '🔩', TOXIC_GAS: '☁️', FLAMMABLE: '🔥', OXIDIZER: '⚡' };
+                const colors = { ORG_SOLVENT: '#8b5cf6', ACID_BASE: '#06b6d4', HEAVY_METAL: '#64748b', TOXIC_GAS: '#ef4444', FLAMMABLE: '#f97316', OXIDIZER: '#f59e0b' };
+                const list = document.getElementById('mediaList');
+                list.innerHTML = data.media.slice(0, 6).map(m => {
+                    const statusCls = m.status === '正常输送' ? 'status-normal' : (m.status === '告警' ? 'status-warning' : 'status-danger');
+                    return `
+                        <div class="media-item">
+                            <div class="media-icon" style="background:${colors[m.hazard_class] || '#06b6d4'}22; color:${colors[m.hazard_class] || '#06b6d4'}">${icons[m.hazard_class] || '📦'}</div>
+                            <div class="media-info">
+                                <div class="media-name">${m.name}</div>
+                                <div class="media-detail">${m.temperature}°C · ${m.pressure}MPa</div>
+                            </div>
+                            <span class="media-status ${statusCls}">${m.status}</span>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error('Failed to fetch media:', e);
+            }
+        }
+
+        async function fetchRouteStats() {
+            try {
+                const res = await fetch(API_BASE + '/hazmat/routes/stats');
+                const data = await res.json();
+                updateRouteChart(data);
+            } catch (e) {
+                console.error('Failed to fetch route stats:', e);
+            }
+        }
+
+        async function fetchTraceList() {
+            try {
+                const res = await fetch(API_BASE + '/hazmat/trace');
+                const data = await res.json();
+                document.getElementById('totalTraces').textContent = data.total;
+                const completed = data.traces.filter(t => t.status === '已处置').length;
+                document.getElementById('completedTraces').textContent = completed;
+                const list = document.getElementById('traceList');
+                list.innerHTML = data.traces.slice(0, 5).map((t, i) => `
+                    <div class="trace-item">
+                        <div class="trace-seq">${i + 1}</div>
+                        <div class="trace-info">
+                            <div class="trace-node">${t.from} → ${t.to}</div>
+                            <div class="trace-time">${t.transfer_time}</div>
+                        </div>
+                        <div class="trace-amount">${t.amount_kg}kg</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch trace:', e);
+            }
+        }
+
+        async function fetchCorrosionStats() {
+            try {
+                const res = await fetch(API_BASE + '/hazmat/segments/stats');
+                const data = await res.json();
+                updateCorrosionChart(data);
+            } catch (e) {
+                console.error('Failed to fetch corrosion stats:', e);
+            }
+        }
+
+        async function fetchLedgerStats() {
+            try {
+                const res = await fetch(API_BASE + '/hazmat/ledger/stats');
+                const data = await res.json();
+                document.getElementById('ledgerTotal').textContent = formatNumber(data.total_entries);
+                document.getElementById('complianceRate').textContent = (data.compliance_rate * 100).toFixed(1) + '%';
+                const list = document.getElementById('ledgerList');
+                list.innerHTML = data.by_type.map(t => `
+                    <div class="ledger-item">
+                        <div class="ledger-header">
+                            <span class="ledger-type">${t.type}</span>
+                            <span class="ledger-count">${formatNumber(t.count)} 条</span>
+                        </div>
+                        <div class="ledger-detail">${t.year}年 · 合规率 ${(t.compliance_rate * 100).toFixed(1)}%</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch ledger stats:', e);
+            }
+        }
+
+        async function fetchValveList() {
+            try {
+                const res = await fetch(API_BASE + '/hazmat/valves');
+                const data = await res.json();
+                const openCount = data.valves.filter(v => v.status === '开启').length;
+                document.getElementById('totalValves').textContent = data.total;
+                document.getElementById('valveOpen').textContent = openCount;
+                const list = document.getElementById('valveList');
+                list.innerHTML = data.valves.slice(0, 8).map(v => `
+                    <div class="valve-item">
+                        <div class="valve-indicator ${v.status === '开启' ? 'valve-open' : 'valve-closed'}"></div>
+                        <span class="valve-name">${v.valve_id}</span>
+                        <span class="valve-status">${v.zone}</span>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch valves:', e);
+            }
+        }
+
+        function updateRouteChart(stats) {
+            if (!routeChart) return;
+            routeChart.setOption({
+                tooltip: { trigger: 'item', backgroundColor: 'rgba(15,23,42,0.9)', borderColor: '#f97316', textStyle: { color: '#e2e8f0' } },
+                legend: { bottom: 0, textStyle: { color: '#64748b', fontSize: 11 } },
+                series: [{
+                    type: 'pie',
+                    radius: ['40%', '65%'],
+                    center: ['50%', '45%'],
+                    data: [
+                        { name: '合规路线', value: stats.compliant_routes, itemStyle: { color: '#22c55e' } },
+                        { name: '偏离路线', value: stats.deviated_routes, itemStyle: { color: '#ef4444' } },
+                    ],
+                    label: { color: '#94a3b8', formatter: '{b}: {c}条' },
+                }]
+            });
+        }
+
+        function updateCorrosionChart(stats) {
+            if (!corrosionChart) return;
+            corrosionChart.setOption({
+                tooltip: { trigger: 'axis', backgroundColor: 'rgba(15,23,42,0.9)', borderColor: '#f97316', textStyle: { color: '#e2e8f0' } },
+                grid: { top: 20, right: 20, bottom: 30, left: 50 },
+                xAxis: { type: 'category', data: stats.risk_distribution.map(r => r.risk), axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#64748b' } },
+                yAxis: { type: 'value', axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: '#1e293b' } } },
+                series: [{
+                    type: 'bar',
+                    data: stats.risk_distribution.map(r => ({
+                        value: r.count,
+                        itemStyle: { color: r.risk === '高风险' ? '#ef4444' : (r.risk === '中风险' ? '#f59e0b' : '#22c55e') }
+                    })),
+                    barWidth: '60%',
+                }]
+            });
+        }
+
+        function refreshAll() {
+            fetchOverview();
+            fetchMediaList();
+            fetchRouteStats();
+            fetchTraceList();
+            fetchCorrosionStats();
+            fetchLedgerStats();
+            fetchValveList();
+        }
+
+        initCharts();
+        updateTime();
+        refreshAll();
+        setInterval(updateTime, 1000);
+        setInterval(refreshAll, 30000);
+    </script>
+</body>
+</html>
