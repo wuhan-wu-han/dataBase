@@ -1,0 +1,48 @@
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: alarm-warning-service
+          uri: http://host.docker.internal:8085
+          predicates:
+            - Path=/api/alert/**
+          filters:
+            - StripPrefix=1
+
+        - id: gas-risk-control
+          uri: http://host.docker.internal:8003
+          predicates:
+            - Path=/api/gas-risk/**
+          filters:
+            - StripPrefix=1
+
+        - id: gas-asset-manage
+          uri: http://host.docker.internal:8001
+          predicates:
+            - Path=/api/gas-asset/**
+          filters:
+            - StripPrefix=1
+
+        - id: road-hazard-control
+          uri: http://host.docker.internal:8002
+          predicates:
+            - Path=/api/road-hazard/**
+          filters:
+            - StripPrefix=1
+
+        - id: data-platform
+          uri: http://host.docker.internal:8000
+          predicates:
+            - Path=/api/platform/**
+          filters:
+            - StripPrefix=1
+
+        - id: alarm-warning-frontend
+          uri: http://host.docker.internal:5173
+          predicates:
+            - Path=/frontend/**
+          filters:
+            - StripPrefix=1

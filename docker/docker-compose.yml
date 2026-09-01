@@ -262,6 +262,20 @@ services:
       timeout: 5s
       retries: 5
 
+  api-gateway:
+    build:
+      context: ../api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    networks:
+      - bigdata
+    depends_on:
+      - kafka
+
 volumes:
   hadoop_namenode:
   hadoop_datanode:
