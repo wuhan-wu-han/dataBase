@@ -55,6 +55,13 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 output_dir = os.path.join(project_root, "output")
 app.mount("/output", StaticFiles(directory=output_dir), name="output")
 
+# 注册危废/化学品输送管控子模块路由
+try:
+    from hazmat_transport import router as hazmat_router
+except ImportError:
+    from src.python.hazmat_transport import router as hazmat_router
+app.include_router(hazmat_router)
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================
