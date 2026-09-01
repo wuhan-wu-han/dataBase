@@ -1,857 +1,376 @@
 <template>
-  <!-- 智慧管廊智能预警驾驶舱 -->
-  <div class="dashboard-container">
-    <!-- 背景粒子效果 -->
-    <div class="bg-particles">
-      <div v-for="i in 20" :key="i" class="particle" :style="particleStyle(i)"></div>
+  <div class="dashboard">
+    <!-- 页面级标题 -->
+    <PageHeader title="监控大屏" subtitle="Monitor Dashboard" />
+
+    <!-- 第一行：4 个 Apple 数据卡 -->
+    <div class="dashboard__row dashboard__row--stats">
+      <StatCard label="今日预警" :value="stats.today" icon="Bell" color="#0071E3" />
+      <StatCard label="高风险预警" :value="stats.highRisk" icon="Warning" color="#FF3B30" />
+      <StatCard label="处理中事件" :value="stats.processing" icon="Clock" color="#FF9500" />
+      <StatCard label="设备在线率" :value="stats.deviceOnlineRate" icon="Monitor" color="#34C759" />
     </div>
 
-    <!-- 顶部标题栏 -->
-    <header class="dashboard-header">
-      <div class="header-left">
-        <div class="system-status">
-          <span class="status-item" v-for="s in systemStatus" :key="s.name">
-            <span class="status-dot" :class="{ online: s.online }"></span>
-            {{ s.name }}
-          </span>
-        </div>
-      </div>
-      <div class="header-center">
-        <div class="header-decor left-decor">
-          <span class="decor-line"></span>
-          <span class="decor-diamond"></span>
-          <span class="decor-line"></span>
-        </div>
-        <div class="header-title-group">
-          <h1 class="header-title">智慧管廊智能预警驾驶舱</h1>
-          <p class="header-subtitle">INTELLIGENT PIPELINE WARNING CENTER</p>
-        </div>
-        <div class="header-decor right-decor">
-          <span class="decor-line"></span>
-          <span class="decor-diamond"></span>
-          <span class="decor-line"></span>
-        </div>
-      </div>
-      <div class="header-right">
-        <div class="realtime-clock">{{ currentTime }}</div>
-        <div class="realtime-date">{{ currentDate }}</div>
-      </div>
-    </header>
-
-    <!-- 主体内容 -->
-    <main class="dashboard-main">
-      <!-- 统计卡片区域 -->
-      <section class="stat-section">
-        <StatCard label="预警总数" :value="totalAlerts" icon="Warning" color="#1890ff" />
-        <StatCard label="待处理预警" :value="openAlerts" icon="Bell" color="#fa8c16" />
-        <StatCard label="红色预警" :value="redAlerts" icon="CircleClose" color="#ff4d4f" />
-        <StatCard label="监控区域" :value="areaCount" icon="Location" color="#13c2c2" />
+    <!-- 第二行：折线图（预警趋势）+ 环形图（预警等级） -->
+    <div class="dashboard__row dashboard__row--charts">
+      <section class="app-card dashboard__chart-card dashboard__chart-card--line">
+        <header class="card-title">
+          <h3 class="card-title__text">预警趋势</h3>
+          <span class="card-title__badge">近 7 天</span>
+        </header>
+        <div ref="lineRef" class="dashboard__chart-canvas"></div>
       </section>
-
-      <!-- 图表区域 -->
-      <section class="chart-section">
-        <!-- 左：预警等级分布环形图 -->
-        <div class="chart-panel">
-          <div class="panel-header">
-            <span class="panel-icon">&#9670;</span>
-            <span class="panel-title">预警等级分布</span>
-          </div>
-          <div ref="pieChartRef" class="chart-container"></div>
-        </div>
-
-        <!-- 中：今日事件趋势折线图 -->
-        <div class="chart-panel">
-          <div class="panel-header">
-            <span class="panel-icon">&#9670;</span>
-            <span class="panel-title">24小时预警趋势</span>
-          </div>
-          <div ref="lineChartRef" class="chart-container"></div>
-        </div>
-
-        <!-- 右：区域风险排行 -->
-        <div class="chart-panel">
-          <div class="panel-header">
-            <span class="panel-icon">&#9670;</span>
-            <span class="panel-title">区域风险排行</span>
-          </div>
-          <div ref="barChartRef" class="chart-container"></div>
-        </div>
+      <section class="app-card dashboard__chart-card dashboard__chart-card--pie">
+        <header class="card-title">
+          <h3 class="card-title__text">预警等级</h3>
+        </header>
+        <div ref="pieRef" class="dashboard__chart-canvas"></div>
       </section>
+    </div>
 
-      <!-- 最新预警列表 -->
-      <section class="alert-section">
-        <div class="panel-header">
-          <span class="panel-icon">&#9670;</span>
-          <span class="panel-title">最新预警事件</span>
-          <span class="panel-badge">{{ recentAlerts.length }} 条</span>
-        </div>
-        <div class="alert-list" v-loading="tableLoading" element-loading-background="rgba(0,0,0,0.3)">
-          <div
-            v-for="alert in recentAlerts"
-            :key="alert.id"
-            class="alert-row"
-            :class="'level-' + (alert.alertLevel || '').toLowerCase()"
-          >
-            <!-- 左侧等级颜色条 -->
-            <div class="alert-level-bar"></div>
-            <!-- 等级标签 -->
-            <div class="alert-level-cell">
-              <AlertLevelTag :level="alert.alertLevel" />
-            </div>
-            <!-- 预警编码 -->
-            <div class="alert-code">{{ alert.alertEventCode }}</div>
-            <!-- 设备 -->
-            <div class="alert-device">
-              <span class="cell-label">设备</span>
-              <span>{{ alert.deviceId }}</span>
-            </div>
-            <!-- 设备类型 -->
-            <div class="alert-type">{{ alert.deviceType }}</div>
-            <!-- 区域 -->
-            <div class="alert-area">
-              <span class="cell-label">区域</span>
-              <span>{{ alert.areaId }}</span>
-            </div>
-            <!-- 状态 -->
-            <div class="alert-status-cell">
-              <AlertStatusTag :status="alert.alertStatus" />
-            </div>
-            <!-- 优先级 -->
-            <div class="alert-priority">
-              <span class="cell-label">优先级</span>
-              <span class="priority-value">{{ alert.priorityScore }}</span>
-            </div>
-            <!-- 时间 -->
-            <div class="alert-time">{{ formatDateTime(alert.eventTimestamp) }}</div>
-          </div>
-          <!-- 空状态 -->
-          <div v-if="!tableLoading && recentAlerts.length === 0" class="alert-empty">
-            暂无预警数据
-          </div>
-        </div>
-      </section>
-    </main>
+    <!-- 第三行：风险分布横向渐变柱状图 -->
+    <section class="app-card dashboard__bar-card">
+      <header class="card-title">
+        <h3 class="card-title__text">风险分布</h3>
+      </header>
+      <div ref="barRef" class="dashboard__bar-canvas"></div>
+    </section>
+
+    <!-- 第四行：最新预警事件表格 -->
+    <section class="app-card dashboard__latest">
+      <header class="card-title">
+        <h3 class="card-title__text">最新预警事件</h3>
+        <router-link to="/alerts" class="dashboard__link">查看全部</router-link>
+      </header>
+      <el-table
+        :data="latestAlerts"
+        v-loading="loading"
+        class="app-table"
+        row-class-name="clickable-row"
+        @row-click="goDetail"
+      >
+        <el-table-column prop="alertEventCode" label="预警编号" min-width="180" />
+        <el-table-column prop="deviceType" label="设备" min-width="120" />
+        <el-table-column prop="areaId" label="区域" width="120" />
+        <el-table-column label="等级" width="110" align="center">
+          <template #default="{ row }"><AlertLevelTag :level="row.alertLevel" /></template>
+        </el-table-column>
+        <el-table-column label="状态" width="110" align="center">
+          <template #default="{ row }"><AlertStatusTag :status="row.alertStatus" /></template>
+        </el-table-column>
+        <el-table-column label="时间" width="170">
+          <template #default="{ row }">{{ formatDateTime(row.eventTimestamp) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="100" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click.stop="goDetail(row)">详情</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import * as echarts from 'echarts'
-import { ElMessage } from 'element-plus'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import AlertLevelTag from '@/components/AlertLevelTag.vue'
 import AlertStatusTag from '@/components/AlertStatusTag.vue'
+import { useEChart } from '@/utils/chart'
 import { getAlertList } from '@/api/alert'
-import { getAreaPriorityList } from '@/api/areaPriority'
 import { formatDateTime } from '@/utils/format'
 
-// ==================== 数据状态 ====================
-const totalAlerts = ref(0)
-const openAlerts = ref(0)
-const redAlerts = ref(0)
-const areaCount = ref(0)
-const recentAlerts = ref([])
-const tableLoading = ref(false)
+const router = useRouter()
+const loading = ref(false)
 
-// ==================== 系统状态（模拟） ====================
-const systemStatus = ref([
-  { name: 'Kafka', online: true },
-  { name: 'Redis', online: true },
-  { name: 'MySQL', online: true }
-])
-
-// ==================== 实时时钟 ====================
-const currentTime = ref('')
-const currentDate = ref('')
-let clockTimer = null
-
-const updateClock = () => {
-  const now = new Date()
-  const h = String(now.getHours()).padStart(2, '0')
-  const m = String(now.getMinutes()).padStart(2, '0')
-  const s = String(now.getSeconds()).padStart(2, '0')
-  currentTime.value = `${h}:${m}:${s}`
-
-  const y = now.getFullYear()
-  const mo = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
-  currentDate.value = `${y}-${mo}-${d} ${weekDays[now.getDay()]}`
-}
-
-// ==================== 粒子效果 ====================
-const particleStyle = (i) => ({
-  left: `${Math.random() * 100}%`,
-  top: `${Math.random() * 100}%`,
-  animationDelay: `${Math.random() * 6}s`,
-  animationDuration: `${4 + Math.random() * 6}s`,
-  width: `${2 + Math.random() * 3}px`,
-  height: `${2 + Math.random() * 3}px`,
-  opacity: 0.2 + Math.random() * 0.4
+// ===== 统计数据 =====
+const stats = ref({
+  today: 0,
+  highRisk: 0,
+  processing: 0,
+  // TODO: 设备在线率无后端接口，前端常量占位
+  deviceOnlineRate: '98.6%'
 })
 
-// ==================== 图表实例 ====================
-const pieChartRef = ref(null)
-const barChartRef = ref(null)
-const lineChartRef = ref(null)
-let pieChart = null
-let barChart = null
-let lineChart = null
+// ===== 趋势 / 分布 / 最新列表 =====
+const trendData = ref([])
+const distribution = ref([])
+const latestAlerts = ref([])
 
-// ==================== 数据加载 ====================
-const loadStats = async () => {
-  try {
-    const totalRes = await getAlertList({ page: 1, size: 1 })
-    totalAlerts.value = totalRes?.total || 0
+// ===== ECharts 实例 =====
+const lineRef = ref(null)
+const pieRef = ref(null)
+const barRef = ref(null)
+const { setOption: setLineOption } = useEChart(lineRef)
+const { setOption: setPieOption } = useEChart(pieRef)
+const { setOption: setBarOption } = useEChart(barRef)
 
-    const openRes = await getAlertList({ status: 'OPEN', page: 1, size: 1 })
-    openAlerts.value = openRes?.total || 0
-
-    const redRes = await getAlertList({ alertLevel: 'RED', page: 1, size: 1 })
-    redAlerts.value = redRes?.total || 0
-
-    const areaRes = await getAreaPriorityList()
-    areaCount.value = Array.isArray(areaRes) ? areaRes.length : 0
-  } catch (error) {
-    console.error('加载统计数据失败:', error)
+// 加载统计：今日总数 / 红色 / OPEN
+async function loadStats() {
+  const [today, high, proc] = await Promise.all([
+    getAlertList({ page: 1, size: 1 }),
+    getAlertList({ alertLevel: 'RED', page: 1, size: 1 }),
+    getAlertList({ status: 'OPEN', page: 1, size: 1 })
+  ])
+  stats.value = {
+    today: today?.total || 0,
+    highRisk: high?.total || 0,
+    processing: proc?.total || 0,
+    deviceOnlineRate: stats.value.deviceOnlineRate
   }
 }
 
-const loadRecentAlerts = async () => {
-  tableLoading.value = true
+// 加载近 7 天趋势：拉取最近 100 条按日分桶
+async function loadTrend() {
+  const res = await getAlertList({ page: 1, size: 100 })
+  const records = res?.records || []
+  const buckets = buildLast7Days()
+  for (const r of records) {
+    const ts = new Date(r.eventTimestamp).getTime()
+    if (isNaN(ts)) continue
+    for (const b of buckets) {
+      if (ts >= b.start && ts < b.start + 86400000) { b.count++; break }
+    }
+  }
+  trendData.value = buckets
+}
+
+// 构建最近 7 天的桶结构
+function buildLast7Days() {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const buckets = []
+  for (let i = 6; i >= 0; i--) {
+    const start = today.getTime() - i * 86400000
+    const d = new Date(start)
+    buckets.push({
+      start,
+      label: `${d.getMonth() + 1}/${d.getDate()}`,
+      count: 0
+    })
+  }
+  return buckets
+}
+
+// 加载等级分布：4 个等级分别取 total
+async function loadDistribution() {
+  const [blue, yellow, orange, red] = await Promise.all([
+    getAlertList({ alertLevel: 'BLUE', page: 1, size: 1 }),
+    getAlertList({ alertLevel: 'YELLOW', page: 1, size: 1 }),
+    getAlertList({ alertLevel: 'ORANGE', page: 1, size: 1 }),
+    getAlertList({ alertLevel: 'RED', page: 1, size: 1 })
+  ])
+  distribution.value = [
+    { name: '蓝色', value: blue?.total || 0, color: '#0071E3' },
+    { name: '黄色', value: yellow?.total || 0, color: '#FFCC00' },
+    { name: '橙色', value: orange?.total || 0, color: '#FF9500' },
+    { name: '红色', value: red?.total || 0, color: '#FF3B30' }
+  ]
+}
+
+// 加载最新 5 条预警
+async function loadLatestAlerts() {
+  loading.value = true
   try {
-    const res = await getAlertList({ page: 1, size: 10 })
-    recentAlerts.value = res?.records || []
-  } catch (error) {
-    ElMessage.error('加载预警列表失败')
-    console.error('加载预警列表失败:', error)
+    const res = await getAlertList({ page: 1, size: 5 })
+    latestAlerts.value = res?.records || []
   } finally {
-    tableLoading.value = false
+    loading.value = false
   }
 }
 
-// ==================== ECharts 配置 ====================
+function goDetail(row) {
+  router.push(`/alerts/${row.id}`)
+}
 
-// 预警等级分布 - 环形仪表盘
-const initPieChart = async () => {
+onMounted(async () => {
   try {
-    const res = await getAlertList({ page: 1, size: 100 })
-    const records = res?.records || []
+    await Promise.all([loadStats(), loadTrend(), loadDistribution(), loadLatestAlerts()])
+  } catch (e) {
+    console.error('Dashboard 数据加载失败:', e)
+  }
+  // 数据就绪后渲染图表
+  renderLineChart()
+  renderPieChart()
+  renderBarChart()
+})
 
-    const levelCount = { BLUE: 0, YELLOW: 0, ORANGE: 0, RED: 0 }
-    records.forEach(item => {
-      if (levelCount[item.alertLevel] !== undefined) levelCount[item.alertLevel]++
-    })
-    const total = records.length
-
-    if (!pieChartRef.value) return
-    pieChart = echarts.init(pieChartRef.value)
-
-    const option = {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'item',
-        backgroundColor: 'rgba(13, 27, 42, 0.9)',
-        borderColor: '#1890ff44',
-        textStyle: { color: '#e0e6ed' },
-        formatter: '{b}: {c} ({d}%)'
-      },
-      legend: {
-        orient: 'vertical',
-        right: 16,
-        top: 'center',
-        itemWidth: 12,
-        itemHeight: 12,
-        itemGap: 16,
-        textStyle: { color: '#8a9bb0', fontSize: 12 }
-      },
-      series: [
-        // 外层装饰环
-        {
-          type: 'pie',
-          radius: ['72%', '74%'],
-          center: ['40%', '50%'],
-          silent: true,
-          label: { show: false },
-          data: [{ value: 1, itemStyle: { color: 'rgba(24, 144, 255, 0.15)' } }]
-        },
-        // 主环形图
-        {
-          name: '预警等级',
-          type: 'pie',
-          radius: ['45%', '70%'],
-          center: ['40%', '50%'],
-          avoidLabelOverlap: false,
-          startAngle: 90,
-          itemStyle: {
-            borderRadius: 6,
-            borderColor: '#0a1628',
-            borderWidth: 3,
-            shadowBlur: 20,
-            shadowColor: 'rgba(24, 144, 255, 0.3)'
-          },
-          label: {
-            show: true,
-            position: 'outside',
-            color: '#e0e6ed',
-            fontSize: 12,
-            formatter: '{b}\n{c}件'
-          },
-          labelLine: {
-            lineStyle: { color: '#2a3a4a' }
-          },
-          emphasis: {
-            scaleSize: 8,
-            itemStyle: { shadowBlur: 30, shadowColor: 'rgba(24, 144, 255, 0.5)' }
-          },
-          data: [
-            { value: levelCount.BLUE, name: '蓝色预警', itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#36cfe9' }, { offset: 1, color: '#1890ff' }]) } },
-            { value: levelCount.YELLOW, name: '黄色预警', itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#ffe066' }, { offset: 1, color: '#fadb14' }]) } },
-            { value: levelCount.ORANGE, name: '橙色预警', itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#ffc069' }, { offset: 1, color: '#fa8c16' }]) } },
-            { value: levelCount.RED, name: '红色预警', itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#ff7875' }, { offset: 1, color: '#ff4d4f' }]) } }
+// 平滑曲线 + 面积渐变
+function renderLineChart() {
+  setLineOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 36, right: 24, top: 24, bottom: 28 },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: trendData.value.map(d => d.label),
+      axisLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
+      axisTick: { show: false },
+      axisLabel: { color: '#86868B', fontSize: 12 }
+    },
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: 'rgba(0,0,0,0.04)' } },
+      axisLabel: { color: '#86868B', fontSize: 12 }
+    },
+    series: [{
+      name: '预警数',
+      type: 'line',
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 8,
+      data: trendData.value.map(d => d.count),
+      itemStyle: { color: '#0071E3' },
+      lineStyle: { width: 2.5, color: '#0071E3' },
+      areaStyle: {
+        color: {
+          type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [
+            { offset: 0, color: 'rgba(0,113,227,0.3)' },
+            { offset: 1, color: 'rgba(0,113,227,0)' }
           ]
-        },
-        // 中心文字
-        {
-          type: 'pie',
-          radius: ['0%', '0%'],
-          center: ['40%', '50%'],
-          label: {
-            show: true,
-            position: 'center',
-            formatter: () => `{total|${total}}\n{label|预警总数}`,
-            rich: {
-              total: {
-                fontSize: 32,
-                fontWeight: 700,
-                color: '#e0e6ed',
-                lineHeight: 40
-              },
-              label: {
-                fontSize: 12,
-                color: '#8a9bb0',
-                lineHeight: 20
-              }
-            }
-          },
-          data: [{ value: 0 }]
         }
-      ]
-    }
-    pieChart.setOption(option)
-  } catch (error) {
-    console.error('初始化饼图失败:', error)
-  }
-}
-
-// 区域风险排行 - 科技横向柱状图
-const initBarChart = async () => {
-  try {
-    const areaRes = await getAreaPriorityList()
-    const areas = Array.isArray(areaRes) ? areaRes : []
-    areas.sort((a, b) => a.importance - b.importance)
-
-    if (!barChartRef.value) return
-    barChart = echarts.init(barChartRef.value)
-
-    const option = {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
-        backgroundColor: 'rgba(13, 27, 42, 0.9)',
-        borderColor: '#1890ff44',
-        textStyle: { color: '#e0e6ed' }
-      },
-      grid: { left: '3%', right: '15%', bottom: '3%', top: '8%', containLabel: true },
-      xAxis: {
-        type: 'value',
-        axisLabel: { color: '#5a6f86' },
-        axisLine: { show: false },
-        splitLine: { lineStyle: { color: 'rgba(42, 58, 74, 0.4)', type: 'dashed' } }
-      },
-      yAxis: {
-        type: 'category',
-        data: areas.map(a => a.areaName),
-        axisLabel: { color: '#e0e6ed', fontSize: 12 },
-        axisLine: { lineStyle: { color: '#2a3a4a' } },
-        axisTick: { show: false }
-      },
-      series: [{
-        name: '重要度',
-        type: 'bar',
-        data: areas.map(a => a.importance),
-        barWidth: 16,
-        itemStyle: {
-          borderRadius: [0, 8, 8, 0],
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: 'rgba(24, 144, 255, 0.3)' },
-            { offset: 0.5, color: '#1890ff' },
-            { offset: 1, color: '#36cfe9' }
-          ]),
-          shadowBlur: 12,
-          shadowColor: 'rgba(24, 144, 255, 0.4)'
-        },
-        label: {
-          show: true,
-          position: 'right',
-          color: '#36cfe9',
-          fontSize: 13,
-          fontWeight: 700,
-          formatter: '{c}'
-        },
-        emphasis: {
-          itemStyle: {
-            shadowBlur: 20,
-            shadowColor: 'rgba(24, 144, 255, 0.6)'
-          }
-        }
-      }]
-    }
-    barChart.setOption(option)
-  } catch (error) {
-    console.error('初始化柱状图失败:', error)
-  }
-}
-
-// 24小时预警趋势折线图
-const initLineChart = async () => {
-  try {
-    if (!lineChartRef.value) return
-    lineChart = echarts.init(lineChartRef.value)
-
-    // 从已有数据生成24小时分布
-    const res = await getAlertList({ page: 1, size: 100 })
-    const records = res?.records || []
-
-    const hourCounts = new Array(24).fill(0)
-    records.forEach(item => {
-      if (item.eventTimestamp) {
-        const hour = new Date(item.eventTimestamp).getHours()
-        hourCounts[hour]++
       }
-    })
+    }]
+  })
+}
 
-    const hours = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`)
-
-    const option = {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(13, 27, 42, 0.9)',
-        borderColor: '#1890ff44',
-        textStyle: { color: '#e0e6ed' }
-      },
-      grid: { left: '3%', right: '5%', bottom: '3%', top: '10%', containLabel: true },
-      xAxis: {
-        type: 'category',
-        data: hours,
-        boundaryGap: false,
-        axisLabel: { color: '#5a6f86', fontSize: 10, interval: 3 },
-        axisLine: { lineStyle: { color: '#2a3a4a' } },
-        axisTick: { show: false }
-      },
-      yAxis: {
-        type: 'value',
-        minInterval: 1,
-        axisLabel: { color: '#5a6f86' },
-        axisLine: { show: false },
-        splitLine: { lineStyle: { color: 'rgba(42, 58, 74, 0.4)', type: 'dashed' } }
-      },
-      series: [{
-        name: '预警数',
-        type: 'line',
-        data: hourCounts,
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        lineStyle: {
-          width: 3,
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#1890ff' },
-            { offset: 1, color: '#36cfe9' }
-          ]),
-          shadowBlur: 10,
-          shadowColor: 'rgba(24, 144, 255, 0.4)'
-        },
-        itemStyle: {
-          color: '#36cfe9',
-          borderColor: '#0a1628',
-          borderWidth: 2
-        },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(24, 144, 255, 0.3)' },
-            { offset: 0.5, color: 'rgba(24, 144, 255, 0.1)' },
-            { offset: 1, color: 'rgba(24, 144, 255, 0)' }
-          ])
+// 环形图：中心显示总预警数
+function renderPieChart() {
+  const total = distribution.value.reduce((sum, d) => sum + d.value, 0)
+  setPieOption({
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    legend: { bottom: 0, icon: 'circle', textStyle: { color: '#6E6E73', fontSize: 12 } },
+    series: [{
+      type: 'pie',
+      radius: ['62%', '78%'],
+      avoidLabelOverlap: false,
+      itemStyle: { borderColor: '#fff', borderWidth: 3 },
+      label: { show: false },
+      data: distribution.value.map(d => ({
+        name: d.name,
+        value: d.value,
+        itemStyle: { color: d.color }
+      }))
+    }, {
+      // 中心标签：总数 + 文字
+      type: 'pie',
+      radius: ['0%', '0%'],
+      silent: true,
+      label: {
+        show: true,
+        position: 'center',
+        formatter: () => `{total|${total}}\n{label|总预警数}`,
+        rich: {
+          total: { fontSize: 28, fontWeight: 700, color: '#1D1D1F', lineHeight: 36, fontFamily: 'SF Pro Display, sans-serif' },
+          label: { fontSize: 12, color: '#86868B', lineHeight: 18 }
         }
-      }]
-    }
-    lineChart.setOption(option)
-  } catch (error) {
-    console.error('初始化趋势图失败:', error)
-  }
+      },
+      data: [{ value: 0 }]
+    }]
+  })
 }
 
-// ==================== 窗口自适应 ====================
-const handleResize = () => {
-  pieChart?.resize()
-  barChart?.resize()
-  lineChart?.resize()
+// 横向渐变柱状图：风险分布
+function renderBarChart() {
+  const data = distribution.value.slice().reverse() // 红色在上更直观
+  setBarOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 60, right: 40, top: 12, bottom: 12 },
+    xAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: 'rgba(0,0,0,0.04)' } },
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: '#86868B', fontSize: 12 }
+    },
+    yAxis: {
+      type: 'category',
+      data: data.map(d => d.name),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: '#424245', fontSize: 13, fontWeight: 500 }
+    },
+    series: [{
+      name: '预警数',
+      type: 'bar',
+      data: data.map(d => ({
+        value: d.value,
+        itemStyle: {
+          color: {
+            type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
+            colorStops: [
+              { offset: 0, color: hexToRgba(d.color, 0.4) },
+              { offset: 1, color: d.color }
+            ]
+          },
+          borderRadius: [0, 6, 6, 0]
+        }
+      })),
+      barWidth: 22
+    }]
+  })
 }
 
-// ==================== 生命周期 ====================
-onMounted(() => {
-  updateClock()
-  clockTimer = setInterval(updateClock, 1000)
-  loadStats()
-  loadRecentAlerts()
-  initPieChart()
-  initBarChart()
-  initLineChart()
-  window.addEventListener('resize', handleResize)
-})
-
-onUnmounted(() => {
-  clearInterval(clockTimer)
-  window.removeEventListener('resize', handleResize)
-  pieChart?.dispose()
-  barChart?.dispose()
-  lineChart?.dispose()
-})
+// #RRGGBB → rgba
+function hexToRgba(hex, alpha) {
+  const m = hex.replace('#', '').match(/^([0-9a-fA-F]{6})$/)
+  if (!m) return `rgba(0,113,227,${alpha})`
+  const r = parseInt(m[1].slice(0, 2), 16)
+  const g = parseInt(m[1].slice(2, 4), 16)
+  const b = parseInt(m[1].slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
 </script>
 
 <style scoped>
-/* ==================== 容器 ==================== */
-.dashboard-container {
-  min-height: 100vh;
-  position: relative;
-  overflow: hidden;
-}
-
-/* ==================== 背景粒子 ==================== */
-.bg-particles {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.particle {
-  position: absolute;
-  background: #1890ff;
-  border-radius: 50%;
-  animation: particleFloat 6s ease-in-out infinite;
-}
-
-@keyframes particleFloat {
-  0%, 100% { transform: translateY(0) scale(1); opacity: 0.2; }
-  50% { transform: translateY(-30px) scale(1.5); opacity: 0.6; }
-}
-
-/* ==================== 顶部标题栏 ==================== */
-.dashboard-header {
-  position: relative;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 40px;
-  background: linear-gradient(180deg, rgba(10, 22, 40, 0.95) 0%, rgba(10, 22, 40, 0.7) 100%);
-  border-bottom: 1px solid rgba(24, 144, 255, 0.2);
-  backdrop-filter: blur(12px);
-}
-
-/* 左侧系统状态 */
-.header-left {
-  flex: 1;
-}
-
-.system-status {
-  display: flex;
+.dashboard__row {
+  display: grid;
   gap: 16px;
-}
-
-.status-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #8a9bb0;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #5a6f86;
-}
-
-.status-dot.online {
-  background: #52c41a;
-  box-shadow: 0 0 8px rgba(82, 196, 26, 0.6);
-  animation: statusPulse 2s ease-in-out infinite;
-}
-
-@keyframes statusPulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(82, 196, 26, 0.6); }
-  50% { box-shadow: 0 0 16px rgba(82, 196, 26, 0.9); }
-}
-
-/* 中间标题 */
-.header-center {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  flex-shrink: 0;
-}
-
-.header-decor {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.decor-line {
-  display: block;
-  width: 60px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #1890ff);
-}
-
-.right-decor .decor-line {
-  background: linear-gradient(90deg, #1890ff, transparent);
-}
-
-.decor-diamond {
-  display: block;
-  width: 8px;
-  height: 8px;
-  background: #1890ff;
-  transform: rotate(45deg);
-  box-shadow: 0 0 10px rgba(24, 144, 255, 0.6);
-}
-
-.header-title-group {
-  text-align: center;
-}
-
-.header-title {
-  font-size: 28px;
-  font-weight: 700;
-  margin: 0;
-  letter-spacing: 6px;
-  background: linear-gradient(90deg, #36cfe9, #1890ff, #36cfe9);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  text-shadow: none;
-  filter: drop-shadow(0 0 12px rgba(24, 144, 255, 0.4));
-}
-
-.header-subtitle {
-  font-size: 11px;
-  color: #5a7a9a;
-  margin: 6px 0 0 0;
-  letter-spacing: 4px;
-  text-transform: uppercase;
-}
-
-/* 右侧时钟 */
-.header-right {
-  flex: 1;
-  text-align: right;
-}
-
-.realtime-clock {
-  font-size: 24px;
-  font-weight: 700;
-  color: #36cfe9;
-  font-family: 'Courier New', monospace;
-  letter-spacing: 2px;
-  text-shadow: 0 0 10px rgba(54, 207, 233, 0.4);
-}
-
-.realtime-date {
-  font-size: 12px;
-  color: #5a7a9a;
-  margin-top: 2px;
-}
-
-/* ==================== 主体内容 ==================== */
-.dashboard-main {
-  position: relative;
-  z-index: 1;
-  padding: 20px 40px;
-}
-
-/* ==================== 统计卡片 ==================== */
-.stat-section {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
-  margin-bottom: 20px;
-}
-
-/* ==================== 图表面板 ==================== */
-.chart-section {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 20px;
-  margin-bottom: 20px;
-}
-
-.chart-panel {
-  background: linear-gradient(135deg, rgba(27, 40, 56, 0.7), rgba(13, 27, 42, 0.8));
-  border-radius: 12px;
-  padding: 20px;
-  border: 1px solid rgba(42, 58, 74, 0.6);
-  backdrop-filter: blur(8px);
-  transition: all 0.3s ease;
-}
-
-.chart-panel:hover {
-  border-color: rgba(24, 144, 255, 0.3);
-  box-shadow: 0 4px 24px rgba(24, 144, 255, 0.1);
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   margin-bottom: 16px;
 }
-
-.panel-icon {
-  color: #1890ff;
-  font-size: 10px;
+.dashboard__row--stats {
+  grid-template-columns: repeat(4, 1fr);
+}
+.dashboard__row--charts {
+  grid-template-columns: 2fr 1fr;
 }
 
-.panel-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #e0e6ed;
-  letter-spacing: 1px;
+/* 图表卡片 */
+.dashboard__chart-card,
+.dashboard__bar-card,
+.dashboard__latest {
+  padding: 20px 24px;
 }
-
-.panel-badge {
-  margin-left: auto;
-  font-size: 12px;
-  color: #1890ff;
-  background: rgba(24, 144, 255, 0.1);
-  padding: 2px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(24, 144, 255, 0.2);
-}
-
-.chart-container {
-  height: 280px;
-  width: 100%;
-}
-
-/* ==================== 预警列表 ==================== */
-.alert-section {
-  background: linear-gradient(135deg, rgba(27, 40, 56, 0.7), rgba(13, 27, 42, 0.8));
-  border-radius: 12px;
-  padding: 20px;
-  border: 1px solid rgba(42, 58, 74, 0.6);
-  backdrop-filter: blur(8px);
-}
-
-.alert-list {
+.dashboard__chart-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 400px;
-  overflow-y: auto;
 }
-
-.alert-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: rgba(13, 27, 42, 0.6);
-  border: 1px solid rgba(42, 58, 74, 0.4);
-  transition: all 0.25s ease;
-  position: relative;
-  overflow: hidden;
+.dashboard__chart-canvas {
+  width: 100%;
+  height: 280px;
 }
-
-.alert-row:hover {
-  background: rgba(24, 144, 255, 0.06);
-  border-color: rgba(24, 144, 255, 0.2);
-  box-shadow: 0 0 20px rgba(24, 144, 255, 0.08);
-  transform: translateX(4px);
+.dashboard__bar-canvas {
+  width: 100%;
+  height: 220px;
 }
-
-/* 左侧等级颜色条 */
-.alert-level-bar {
-  width: 4px;
-  height: 100%;
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  border-radius: 4px 0 0 4px;
+.dashboard__link {
+  font-size: 13px;
+  color: var(--app-primary);
+  text-decoration: none;
+  font-weight: 500;
 }
-
-.level-red .alert-level-bar { background: linear-gradient(180deg, #ff7875, #ff4d4f); box-shadow: 0 0 8px rgba(255, 77, 79, 0.5); }
-.level-orange .alert-level-bar { background: linear-gradient(180deg, #ffc069, #fa8c16); box-shadow: 0 0 8px rgba(250, 140, 22, 0.5); }
-.level-yellow .alert-level-bar { background: linear-gradient(180deg, #ffe066, #fadb14); box-shadow: 0 0 8px rgba(250, 219, 20, 0.5); }
-.level-blue .alert-level-bar { background: linear-gradient(180deg, #69c0ff, #1890ff); box-shadow: 0 0 8px rgba(24, 144, 255, 0.5); }
-
-.alert-level-cell { flex-shrink: 0; width: 80px; }
-.alert-code { flex: 1; font-family: 'Courier New', monospace; font-size: 13px; color: #e0e6ed; min-width: 180px; }
-.alert-device { width: 160px; font-size: 13px; color: #b0bec5; }
-.alert-type { width: 100px; font-size: 13px; color: #8a9bb0; }
-.alert-area { width: 100px; font-size: 13px; color: #b0bec5; }
-.alert-status-cell { flex-shrink: 0; width: 80px; }
-.alert-priority { width: 100px; font-size: 13px; color: #8a9bb0; }
-.alert-time { width: 170px; font-size: 13px; color: #5a7a9a; font-family: 'Courier New', monospace; text-align: right; }
-
-.cell-label {
-  display: block;
-  font-size: 10px;
-  color: #5a6f86;
-  margin-bottom: 2px;
-  text-transform: uppercase;
+.dashboard__link:hover {
+  opacity: 0.75;
 }
-
-.priority-value {
-  font-weight: 700;
-  color: #36cfe9;
-  font-size: 16px;
-}
-
-.alert-empty {
-  text-align: center;
-  padding: 40px;
-  color: #5a6f86;
-  font-size: 14px;
-}
-
-/* ==================== 适配 ==================== */
-@media (max-width: 1400px) {
-  .chart-section {
-    grid-template-columns: 1fr 1fr;
-  }
-  .chart-section .chart-panel:last-child {
-    grid-column: span 2;
-  }
+.dashboard__latest :deep(.clickable-row) {
+  cursor: pointer;
 }
 
 @media (max-width: 1024px) {
-  .stat-section {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .chart-section {
-    grid-template-columns: 1fr;
-  }
-  .chart-section .chart-panel:last-child {
-    grid-column: span 1;
-  }
+  .dashboard__row--stats { grid-template-columns: repeat(2, 1fr); }
+  .dashboard__row--charts { grid-template-columns: 1fr; }
 }
 </style>

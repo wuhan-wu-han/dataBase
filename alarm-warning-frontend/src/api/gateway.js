@@ -1,0 +1,58 @@
+/**
+ * 统一网关配置
+ * 所有子模块 API 通过 api-gateway:8080 转发，避免直连后端端口
+ *
+ * 网关路由规则（application.yml）：
+ *   /api/alert/**        → 8085  alarm-warning-service
+ *   /api/gas-risk/**     → 8003  gas_risk_control
+ *   /api/gas-asset/**    → 8001  gas_asset_manage
+ *   /api/road-hazard/**  → 8002  road_hazard_control
+ *
+ * StripPrefix=2 剥掉前两段 /api/{服务名}，后端原路径保持不变
+ */
+import axios from 'axios'
+import { ElMessage } from 'element-plus'
+
+// 网关基础地址（开发环境通过 Vite Proxy 代理到 8080）
+export const GATEWAY_BASE = '/api'
+
+// 各子模块网关前缀
+export const MODULE_PREFIX = {
+  alarm: '/api/alert',          // 主平台预警服务
+  gasRisk: '/api/gas-risk',     // 燃气风控
+  gasAsset: '/api/gas-asset',  // 资产管理
+  roadHazard: '/api/road-hazard' // 道路塌陷
+}
+
+/**
+ * 创建带统一拦截器的 axios 实例
+ * @param {string} prefix - 模块前缀（见 MODULE_PREFIX）
+ * @returns {import('axios').AxiosInstance}
+ */
+export function createModuleHttp(prefix) {
+  const instance = axios.create({
+    baseURL: prefix,
+    timeout: 15000
+  })
+
+  // 请求拦截器：可在此注入 token 等
+  instance.interceptors.request.use(
+    (config) => config,
+    (error) => Promise.reject(error)
+  )
+
+  // 响应拦截器：统一错误提示
+  instance.interceptors.response.use(
+    (response) => response.data,
+    (error) => {
+      const message = error.response?.data?.detail
+        || error.response?.data?.message
+        || error.message
+        || '请求失败'
+      ElMessage.error(message)
+      return Promise.reject(error)
+    }
+  )
+
+  return instance
+}

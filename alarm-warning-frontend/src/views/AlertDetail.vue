@@ -1,250 +1,175 @@
 <template>
-  <div class="alert-detail-container">
-    <div class="bg-particles">
-      <div v-for="i in 20" :key="i" class="particle" :style="particleStyle(i)"></div>
+  <div class="alert-detail" v-loading="loading">
+    <!-- 返回链接 -->
+    <router-link to="/alerts" class="alert-detail__back">
+      <el-icon><ArrowLeft /></el-icon> 返回列表
+    </router-link>
+
+    <PageHeader title="预警事件详情" />
+
+    <template v-if="detail">
+      <!-- 顶部：状态卡片 + 操作面板 -->
+      <section class="alert-detail__top">
+        <div class="app-card alert-detail__status">
+          <div class="alert-detail__level-badge" :class="'level-' + (detail.alertLevel || '').toLowerCase()">
+            {{ levelShort(detail.alertLevel) }}
+          </div>
+          <div class="alert-detail__status-info">
+            <div class="alert-detail__code">{{ detail.alertEventCode }}</div>
+            <div class="alert-detail__tags">
+              <AlertLevelTag :level="detail.alertLevel" />
+              <AlertStatusTag :status="detail.alertStatus" />
+            </div>
+            <div class="alert-detail__device">{{ detail.deviceType }} · {{ detail.deviceId }}</div>
+          </div>
+        </div>
+
+        <div class="app-card alert-detail__action">
+          <h3 class="alert-detail__panel-title">状态操作</h3>
+          <div class="alert-detail__action-buttons">
+            <el-button
+              v-if="detail.alertStatus === 'OPEN'"
+              type="warning"
+              :loading="statusUpdating"
+              @click="handleStatus('ACKNOWLEDGED')"
+            >确认</el-button>
+            <el-button
+              v-if="detail.alertStatus === 'ACKNOWLEDGED'"
+              type="success"
+              :loading="statusUpdating"
+              @click="handleStatus('RESOLVED')"
+            >解决</el-button>
+            <el-button
+              v-if="detail.alertStatus !== 'CLOSED'"
+              type="info"
+              :loading="statusUpdating"
+              @click="handleStatus('CLOSED')"
+            >关闭</el-button>
+            <span v-if="detail.alertStatus === 'CLOSED'" class="alert-detail__closed-hint">该事件已关闭</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 详情网格 -->
+      <section class="alert-detail__grid">
+        <!-- 基本信息 -->
+        <div class="app-card alert-detail__panel">
+          <h3 class="alert-detail__panel-title">基本信息</h3>
+          <div class="alert-detail__info-grid">
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">预警编码</span>
+              <span class="alert-detail__info-value code">{{ detail.alertEventCode }}</span>
+            </div>
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">数据来源</span>
+              <span class="alert-detail__info-value">{{ detail.source || '-' }}</span>
+            </div>
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">关联事件ID</span>
+              <span class="alert-detail__info-value code">{{ detail.sourceEventId || '-' }}</span>
+            </div>
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">设备ID</span>
+              <span class="alert-detail__info-value">{{ detail.deviceId }}</span>
+            </div>
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">设备类型</span>
+              <span class="alert-detail__info-value">{{ detail.deviceType }}</span>
+            </div>
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">管廊区段</span>
+              <span class="alert-detail__info-value">{{ detail.zone || '-' }}</span>
+            </div>
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">区域ID</span>
+              <span class="alert-detail__info-value">{{ detail.areaId }}</span>
+            </div>
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">事件时间</span>
+              <span class="alert-detail__info-value time">{{ formatDateTime(detail.eventTimestamp) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 监测数据 -->
+        <div class="app-card alert-detail__panel">
+          <h3 class="alert-detail__panel-title">监测数据</h3>
+          <div class="alert-detail__info-grid">
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">监测指标</span>
+              <span class="alert-detail__info-value">{{ detail.metricKey }}</span>
+            </div>
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">当前值</span>
+              <span class="alert-detail__info-value highlight">{{ detail.metricValue }}</span>
+            </div>
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">阈值</span>
+              <span class="alert-detail__info-value">{{ detail.thresholdValue }}</span>
+            </div>
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">优先级评分</span>
+              <span class="alert-detail__info-value priority">{{ detail.priorityScore }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 原因分析 -->
+        <div
+          v-if="detail.rootCause || detail.rootCauseDesc"
+          class="app-card alert-detail__panel alert-detail__panel--full"
+        >
+          <h3 class="alert-detail__panel-title">原因分析</h3>
+          <div class="alert-detail__info-grid">
+            <div class="alert-detail__info-item" v-if="detail.rootCause">
+              <span class="alert-detail__info-label">根因类型</span>
+              <span class="alert-detail__info-value">{{ detail.rootCause }}</span>
+            </div>
+            <div class="alert-detail__info-item" v-if="detail.rootCauseDesc">
+              <span class="alert-detail__info-label">详细描述</span>
+              <span class="alert-detail__info-value desc">{{ detail.rootCauseDesc }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 关联信息 -->
+        <div v-if="detail.alertGroupId" class="app-card alert-detail__panel">
+          <h3 class="alert-detail__panel-title">关联信息</h3>
+          <div class="alert-detail__info-grid">
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">预警组ID</span>
+              <span class="alert-detail__info-value code">{{ detail.alertGroupId }}</span>
+            </div>
+            <div class="alert-detail__info-item">
+              <span class="alert-detail__info-label">合并次数</span>
+              <span class="alert-detail__info-value">{{ detail.mergedCount }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </template>
+
+    <!-- 空态 -->
+    <div v-if="!loading && !detail" class="alert-detail__empty">
+      <el-icon :size="48"><Warning /></el-icon>
+      <p>预警事件不存在或加载失败</p>
+      <el-button type="primary" @click="$router.push('/alerts')">返回列表</el-button>
     </div>
-
-    <header class="page-header">
-      <div class="header-left">
-        <span class="back-btn" @click="$router.push('/alerts')">
-          <el-icon><ArrowLeft /></el-icon> 返回列表
-        </span>
-      </div>
-      <div class="header-center">
-        <div class="header-decor left-decor">
-          <span class="decor-line"></span>
-          <span class="decor-diamond"></span>
-          <span class="decor-line"></span>
-        </div>
-        <div class="header-title-group">
-          <h1 class="header-title">预警事件详情</h1>
-          <p class="header-subtitle">ALERT EVENT DETAIL</p>
-        </div>
-        <div class="header-decor right-decor">
-          <span class="decor-line"></span>
-          <span class="decor-diamond"></span>
-          <span class="decor-line"></span>
-        </div>
-      </div>
-      <div class="header-right">
-        <div class="realtime-clock">{{ currentTime }}</div>
-        <div class="realtime-date">{{ currentDate }}</div>
-      </div>
-    </header>
-
-    <main class="page-main" v-loading="loading" element-loading-background="rgba(0,0,0,0.3)">
-      <template v-if="detail">
-        <!-- 顶部状态卡片 -->
-        <section class="status-section">
-          <div class="status-card" :class="'level-' + (detail.alertLevel || '').toLowerCase()">
-            <div class="card-glow"></div>
-            <div class="card-content">
-              <div class="level-indicator">
-                <div class="level-ring">
-                  <span class="level-text">{{ levelShort(detail.alertLevel) }}</span>
-                </div>
-              </div>
-              <div class="status-info">
-                <div class="status-code">{{ detail.alertEventCode }}</div>
-                <div class="status-row">
-                  <AlertLevelTag :level="detail.alertLevel" />
-                  <AlertStatusTag :status="detail.alertStatus" />
-                </div>
-                <div class="status-device">{{ detail.deviceType }} - {{ detail.deviceId }}</div>
-              </div>
-            </div>
-            <div class="card-decoration"></div>
-          </div>
-
-          <div class="action-card">
-            <div class="panel-header">
-              <span class="panel-icon">&#9670;</span>
-              <span class="panel-title">状态操作</span>
-            </div>
-            <div class="action-buttons">
-              <el-button
-                v-if="detail.alertStatus === 'OPEN'"
-                type="warning"
-                @click="handleStatus('ACKNOWLEDGED')"
-                :loading="statusUpdating"
-                class="action-btn"
-              >
-                <el-icon><Check /></el-icon> 确认
-              </el-button>
-              <el-button
-                v-if="detail.alertStatus === 'ACKNOWLEDGED'"
-                type="success"
-                @click="handleStatus('RESOLVED')"
-                :loading="statusUpdating"
-                class="action-btn"
-              >
-                <el-icon><CircleCheck /></el-icon> 解决
-              </el-button>
-              <el-button
-                v-if="detail.alertStatus !== 'CLOSED'"
-                type="info"
-                @click="handleStatus('CLOSED')"
-                :loading="statusUpdating"
-                class="action-btn"
-              >
-                <el-icon><Close /></el-icon> 关闭
-              </el-button>
-              <div v-if="detail.alertStatus === 'CLOSED'" class="closed-hint">
-                该事件已关闭
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 详细信息 -->
-        <section class="detail-section">
-          <div class="detail-panel">
-            <div class="panel-header">
-              <span class="panel-icon">&#9670;</span>
-              <span class="panel-title">基本信息</span>
-            </div>
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="info-label">预警编码</span>
-                <span class="info-value code">{{ detail.alertEventCode }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">数据来源</span>
-                <span class="info-value">{{ detail.source }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">关联事件ID</span>
-                <span class="info-value code">{{ detail.sourceEventId || '-' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">设备ID</span>
-                <span class="info-value">{{ detail.deviceId }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">设备类型</span>
-                <span class="info-value">{{ detail.deviceType }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">管廊区段</span>
-                <span class="info-value">{{ detail.zone }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">区域ID</span>
-                <span class="info-value">{{ detail.areaId }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">事件时间</span>
-                <span class="info-value time">{{ formatDateTime(detail.eventTimestamp) }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="detail-panel">
-            <div class="panel-header">
-              <span class="panel-icon">&#9670;</span>
-              <span class="panel-title">监测数据</span>
-            </div>
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="info-label">监测指标</span>
-                <span class="info-value">{{ detail.metricKey }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">当前值</span>
-                <span class="info-value highlight">{{ detail.metricValue }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">阈值</span>
-                <span class="info-value">{{ detail.thresholdValue }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">优先级评分</span>
-                <span class="info-value priority">{{ detail.priorityScore }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="detail-panel full-width" v-if="detail.rootCause || detail.rootCauseDesc">
-            <div class="panel-header">
-              <span class="panel-icon">&#9670;</span>
-              <span class="panel-title">原因分析</span>
-            </div>
-            <div class="cause-content">
-              <div class="info-item" v-if="detail.rootCause">
-                <span class="info-label">根因类型</span>
-                <span class="info-value">{{ detail.rootCause }}</span>
-              </div>
-              <div class="info-item" v-if="detail.rootCauseDesc">
-                <span class="info-label">详细描述</span>
-                <span class="info-value desc">{{ detail.rootCauseDesc }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="detail-panel" v-if="detail.alertGroupId">
-            <div class="panel-header">
-              <span class="panel-icon">&#9670;</span>
-              <span class="panel-title">关联信息</span>
-            </div>
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="info-label">预警组ID</span>
-                <span class="info-value code">{{ detail.alertGroupId }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">合并次数</span>
-                <span class="info-value">{{ detail.mergedCount }}</span>
-              </div>
-            </div>
-          </div>
-        </section>
-      </template>
-
-      <div v-if="!loading && !detail" class="empty-state">
-        <el-icon :size="48"><Warning /></el-icon>
-        <p>预警事件不存在或加载失败</p>
-        <el-button type="primary" @click="$router.push('/alerts')" class="back-list-btn">返回列表</el-button>
-      </div>
-    </main>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Warning, Check, CircleCheck, Close } from '@element-plus/icons-vue'
+import { ArrowLeft, Warning } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import AlertLevelTag from '@/components/AlertLevelTag.vue'
 import AlertStatusTag from '@/components/AlertStatusTag.vue'
 import { getAlertDetail, updateAlertStatus } from '@/api/alert'
 import { formatDateTime } from '@/utils/format'
 
 const route = useRoute()
-const router = useRouter()
-
-const currentTime = ref('')
-const currentDate = ref('')
-let clockTimer = null
-
-const updateClock = () => {
-  const now = new Date()
-  currentTime.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
-  const y = now.getFullYear()
-  const mo = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
-  currentDate.value = `${y}-${mo}-${d} ${weekDays[now.getDay()]}`
-}
-
-const particleStyle = (i) => ({
-  left: `${Math.random() * 100}%`,
-  top: `${Math.random() * 100}%`,
-  animationDelay: `${Math.random() * 6}s`,
-  animationDuration: `${4 + Math.random() * 6}s`,
-  width: `${2 + Math.random() * 3}px`,
-  height: `${2 + Math.random() * 3}px`,
-  opacity: 0.2 + Math.random() * 0.4
-})
 
 const loading = ref(false)
 const detail = ref(null)
@@ -264,6 +189,7 @@ const loadDetail = async () => {
   }
 }
 
+// 状态操作：保留原有 handleStatus 业务逻辑
 const handleStatus = async (status) => {
   statusUpdating.value = true
   try {
@@ -277,372 +203,186 @@ const handleStatus = async (status) => {
   }
 }
 
+// 等级缩写
 const levelShort = (level) => {
   const map = { BLUE: '蓝', YELLOW: '黄', ORANGE: '橙', RED: '红' }
   return map[level] || level
 }
 
 onMounted(() => {
-  updateClock()
-  clockTimer = setInterval(updateClock, 1000)
   loadDetail()
-})
-
-onUnmounted(() => {
-  clearInterval(clockTimer)
 })
 </script>
 
 <style scoped>
-.alert-detail-container {
-  min-height: 100vh;
-  position: relative;
-  overflow: hidden;
-}
-
-.bg-particles {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.particle {
-  position: absolute;
-  background: #1890ff;
-  border-radius: 50%;
-  animation: particleFloat 6s ease-in-out infinite;
-}
-
-@keyframes particleFloat {
-  0%, 100% { transform: translateY(0) scale(1); opacity: 0.2; }
-  50% { transform: translateY(-30px) scale(1.5); opacity: 0.6; }
-}
-
-.page-header {
-  position: relative;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 40px;
-  background: linear-gradient(180deg, rgba(10, 22, 40, 0.95) 0%, rgba(10, 22, 40, 0.7) 100%);
-  border-bottom: 1px solid rgba(24, 144, 255, 0.2);
-  backdrop-filter: blur(12px);
-}
-
-.header-left { flex: 1; }
-
-.back-btn {
+.alert-detail__back {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  color: #8a9bb0;
+  gap: 4px;
   font-size: 13px;
-  cursor: pointer;
-  transition: color 0.2s;
+  color: var(--app-text-3);
+  text-decoration: none;
+  margin-bottom: 12px;
 }
-.back-btn:hover { color: #1890ff; }
-
-.header-center {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  flex-shrink: 0;
+.alert-detail__back:hover {
+  color: var(--app-primary);
 }
 
-.header-decor { display: flex; align-items: center; gap: 4px; }
-.decor-line { display: block; width: 60px; height: 2px; background: linear-gradient(90deg, transparent, #1890ff); }
-.right-decor .decor-line { background: linear-gradient(90deg, #1890ff, transparent); }
-.decor-diamond { display: block; width: 8px; height: 8px; background: #1890ff; transform: rotate(45deg); box-shadow: 0 0 10px rgba(24, 144, 255, 0.6); }
-
-.header-title-group { text-align: center; }
-.header-title {
-  font-size: 26px;
-  font-weight: 700;
-  margin: 0;
-  letter-spacing: 6px;
-  background: linear-gradient(90deg, #36cfe9, #1890ff, #36cfe9);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 0 12px rgba(24, 144, 255, 0.4));
-}
-.header-subtitle {
-  font-size: 11px;
-  color: #5a7a9a;
-  margin: 6px 0 0 0;
-  letter-spacing: 4px;
-  text-transform: uppercase;
-}
-
-.header-right { flex: 1; text-align: right; }
-.realtime-clock {
-  font-size: 24px;
-  font-weight: 700;
-  color: #36cfe9;
-  font-family: 'Courier New', monospace;
-  letter-spacing: 2px;
-  text-shadow: 0 0 10px rgba(54, 207, 233, 0.4);
-}
-.realtime-date { font-size: 12px; color: #5a7a9a; margin-top: 2px; }
-
-.page-main {
-  position: relative;
-  z-index: 1;
-  padding: 20px 40px;
-}
-
-/* 顶部状态区 */
-.status-section {
+/* 顶部区：状态卡 + 操作面板 */
+.alert-detail__top {
   display: grid;
   grid-template-columns: 2fr 1fr;
-  gap: 20px;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 16px;
 }
-
-.status-card {
-  position: relative;
-  padding: 28px 32px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, rgba(27, 40, 56, 0.8), rgba(13, 27, 42, 0.9));
-  border: 1px solid rgba(42, 58, 74, 0.6);
-  backdrop-filter: blur(10px);
-  overflow: hidden;
-}
-
-.level-red { border-color: rgba(255, 77, 79, 0.4); }
-.level-orange { border-color: rgba(250, 140, 22, 0.4); }
-.level-yellow { border-color: rgba(250, 219, 20, 0.4); }
-.level-blue { border-color: rgba(24, 144, 255, 0.4); }
-
-.card-glow {
-  position: absolute;
-  top: -50%; left: -50%;
-  width: 200%; height: 200%;
-  opacity: 0.5;
-  pointer-events: none;
-}
-
-.level-red .card-glow { background: radial-gradient(circle, rgba(255, 77, 79, 0.08) 0%, transparent 70%); }
-.level-orange .card-glow { background: radial-gradient(circle, rgba(250, 140, 22, 0.08) 0%, transparent 70%); }
-.level-yellow .card-glow { background: radial-gradient(circle, rgba(250, 219, 20, 0.08) 0%, transparent 70%); }
-.level-blue .card-glow { background: radial-gradient(circle, rgba(24, 144, 255, 0.08) 0%, transparent 70%); }
-
-.card-content {
-  position: relative;
+.alert-detail__status {
   display: flex;
   align-items: center;
-  gap: 24px;
-  z-index: 1;
+  gap: 20px;
 }
-
-.level-indicator { flex-shrink: 0; }
-
-.level-ring {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
+.alert-detail__level-badge {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 3px solid;
-}
-
-.level-red .level-ring { border-color: #ff4d4f; box-shadow: 0 0 20px rgba(255, 77, 79, 0.4); }
-.level-orange .level-ring { border-color: #fa8c16; box-shadow: 0 0 20px rgba(250, 140, 22, 0.4); }
-.level-yellow .level-ring { border-color: #fadb14; box-shadow: 0 0 20px rgba(250, 219, 20, 0.4); }
-.level-blue .level-ring { border-color: #1890ff; box-shadow: 0 0 20px rgba(24, 144, 255, 0.4); }
-
-.level-text {
-  font-size: 24px;
-  font-weight: 700;
-}
-
-.level-red .level-text { color: #ff4d4f; }
-.level-orange .level-text { color: #fa8c16; }
-.level-yellow .level-text { color: #fadb14; }
-.level-blue .level-text { color: #1890ff; }
-
-.status-info { flex: 1; }
-
-.status-code {
-  font-family: 'Courier New', monospace;
-  font-size: 18px;
-  color: #e0e6ed;
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-
-.status-row {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.status-device {
-  font-size: 14px;
-  color: #8a9bb0;
-}
-
-.card-decoration {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  height: 3px;
-}
-
-.level-red .card-decoration { background: linear-gradient(90deg, transparent, #ff4d4f, transparent); }
-.level-orange .card-decoration { background: linear-gradient(90deg, transparent, #fa8c16, transparent); }
-.level-yellow .card-decoration { background: linear-gradient(90deg, transparent, #fadb14, transparent); }
-.level-blue .card-decoration { background: linear-gradient(90deg, transparent, #1890ff, transparent); }
-
-.action-card {
-  background: linear-gradient(135deg, rgba(27, 40, 56, 0.7), rgba(13, 27, 42, 0.8));
+  width: 56px;
+  height: 56px;
   border-radius: 12px;
-  padding: 20px;
-  border: 1px solid rgba(42, 58, 74, 0.6);
-  backdrop-filter: blur(8px);
+  font-size: 22px;
+  font-weight: 600;
+  flex-shrink: 0;
 }
-
-.panel-header {
+.alert-detail__level-badge.level-blue {
+  background-color: rgba(41, 121, 255, 0.1);
+  color: #2979FF;
+}
+.alert-detail__level-badge.level-yellow {
+  background-color: rgba(250, 173, 20, 0.12);
+  color: #FAAD14;
+}
+.alert-detail__level-badge.level-orange {
+  background-color: rgba(250, 140, 22, 0.12);
+  color: #FA8C16;
+}
+.alert-detail__level-badge.level-red {
+  background-color: rgba(245, 34, 45, 0.1);
+  color: #F5222D;
+}
+.alert-detail__status-info {
+  min-width: 0;
+  flex: 1;
+}
+.alert-detail__code {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--app-text-1);
+  margin-bottom: 8px;
+}
+.alert-detail__tags {
   display: flex;
-  align-items: center;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
+}
+.alert-detail__device {
+  font-size: 13px;
+  color: var(--app-text-3);
 }
 
-.panel-icon { color: #1890ff; font-size: 10px; }
-.panel-title { font-size: 15px; font-weight: 600; color: #e0e6ed; letter-spacing: 1px; }
-
-.action-buttons {
+.alert-detail__action {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
-
-.action-btn {
-  width: 100%;
-  height: 44px !important;
-  font-size: 15px !important;
-  border-radius: 8px !important;
-  letter-spacing: 2px;
+.alert-detail__action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-
-.closed-hint {
-  text-align: center;
-  color: #5a6f86;
+.alert-detail__closed-hint {
+  color: var(--app-text-3);
   font-size: 14px;
-  padding: 20px 0;
+  text-align: center;
+  padding: 12px 0;
 }
 
-/* 详细信息区 */
-.detail-section {
+/* 详情网格 */
+.alert-detail__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 16px;
 }
-
-.detail-panel {
-  background: linear-gradient(135deg, rgba(27, 40, 56, 0.7), rgba(13, 27, 42, 0.8));
-  border-radius: 12px;
-  padding: 20px;
-  border: 1px solid rgba(42, 58, 74, 0.6);
-  backdrop-filter: blur(8px);
-  transition: all 0.3s ease;
+.alert-detail__panel {
+  padding: 16px 20px;
 }
-
-.detail-panel:hover {
-  border-color: rgba(24, 144, 255, 0.3);
-  box-shadow: 0 4px 24px rgba(24, 144, 255, 0.1);
-}
-
-.detail-panel.full-width {
+.alert-detail__panel--full {
   grid-column: 1 / -1;
 }
-
-.info-grid {
+.alert-detail__panel-title {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--app-text-1);
+}
+.alert-detail__info-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
-
-.info-item {
+.alert-detail__info-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
-
-.info-label {
+.alert-detail__info-label {
   font-size: 12px;
-  color: #5a7a9a;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  color: var(--app-text-3);
 }
-
-.info-value {
-  font-size: 15px;
-  color: #e0e6ed;
-  font-weight: 500;
-}
-
-.info-value.code {
-  font-family: 'Courier New', monospace;
-  color: #36cfe9;
-}
-
-.info-value.time {
-  font-family: 'Courier New', monospace;
-  color: #8a9bb0;
+.alert-detail__info-value {
   font-size: 14px;
+  color: var(--app-text-1);
+  font-weight: 500;
+  word-break: break-all;
 }
-
-.info-value.highlight {
+.alert-detail__info-value.code {
+  font-family: 'Courier New', monospace;
+  color: var(--app-primary);
+}
+.alert-detail__info-value.time {
+  font-family: 'Courier New', monospace;
+  color: var(--app-text-2);
+}
+.alert-detail__info-value.highlight {
   font-size: 20px;
   font-weight: 700;
-  color: #ff7875;
+  color: #F5222D;
 }
-
-.info-value.priority {
+.alert-detail__info-value.priority {
   font-size: 20px;
   font-weight: 700;
-  color: #36cfe9;
+  color: var(--app-primary);
 }
-
-.info-value.desc {
+.alert-detail__info-value.desc {
   line-height: 1.6;
-  color: #b0bec5;
+  color: var(--app-text-2);
+  font-weight: 400;
 }
 
-.cause-content {
+/* 空态 */
+.alert-detail__empty {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.empty-state {
-  text-align: center;
+  align-items: center;
+  justify-content: center;
   padding: 80px 0;
-  color: #5a6f86;
+  color: var(--app-text-3);
+  gap: 12px;
 }
-
-.empty-state p {
-  margin: 16px 0 24px;
+.alert-detail__empty p {
+  margin: 0 0 12px;
   font-size: 15px;
-}
-
-.back-list-btn {
-  background: linear-gradient(135deg, #1890ff, #36cfe9) !important;
-  border: none !important;
-  border-radius: 8px !important;
-  padding: 10px 32px !important;
-}
-
-:deep(.el-table .el-loading-mask) {
-  background: rgba(13, 27, 42, 0.5) !important;
 }
 
 @media (max-width: 1024px) {
-  .status-section { grid-template-columns: 1fr; }
-  .detail-section { grid-template-columns: 1fr; }
+  .alert-detail__top { grid-template-columns: 1fr; }
+  .alert-detail__grid { grid-template-columns: 1fr; }
 }
 </style>

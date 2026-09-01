@@ -1,6 +1,6 @@
 <template>
   <!-- 预警等级标签组件（对应后端 AlertLevel 枚举） -->
-  <el-tag :type="tagType" effect="dark" size="small">
+  <el-tag :type="tagType" effect="light" size="small">
     {{ levelText }}
   </el-tag>
 </template>

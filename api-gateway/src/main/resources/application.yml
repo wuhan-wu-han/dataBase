@@ -16,53 +16,44 @@ spring:
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials
       routes:
-        # ── 1. 分级分类预警引擎 (Java :8085) ──
-        - id: alarm-warning-service
-          uri: http://localhost:8085
-          predicates:
-            - Path=/api/alert/**
-          filters:
-            - StripPrefix=1
-
-        # ── 2. 燃气管网安全风控 (Python :8003) ──
+        # ── 1. 燃气管网安全风控 (Python :8003) ──
+        # 前端请求 /api/gas-risk/api/monitoring/sensors
+        # StripPrefix=2 剥掉 /api/gas-risk，转发至 8003:/api/monitoring/sensors
         - id: gas-risk-control
           uri: http://localhost:8003
           predicates:
             - Path=/api/gas-risk/**
           filters:
-            - StripPrefix=1
+            - StripPrefix=2
 
-        # ── 3. 燃气资产管理 (Python :8001) ──
+        # ── 2. 燃气资产管理 (Python :8001) ──
+        # 前端请求 /api/gas-asset/api/assets
+        # StripPrefix=2 剥掉 /api/gas-asset，转发至 8001:/api/assets
         - id: gas-asset-manage
           uri: http://localhost:8001
           predicates:
             - Path=/api/gas-asset/**
           filters:
-            - StripPrefix=1
+            - StripPrefix=2
 
-        # ── 4. 道路 hazard 管控 (Python :8002) ──
+        # ── 3. 道路塌陷管控 (Python :8002) ──
+        # 前端请求 /api/road-hazard/api/summary
+        # StripPrefix=2 剥掉 /api/road-hazard，转发至 8002:/api/summary
         - id: road-hazard-control
           uri: http://localhost:8002
           predicates:
             - Path=/api/road-hazard/**
           filters:
-            - StripPrefix=1
+            - StripPrefix=2
 
-        # ── 5. 综合数据平台 (Python :8000) ──
-        - id: data-platform
-          uri: http://localhost:8000
+        # ── 4. 分级分类预警引擎 (Java :8085) ──
+        # 兜底路由：主平台 API 路径已含 /api 前缀（如 /api/alerts）
+        # 直接转发，不做 StripPrefix
+        - id: alarm-warning-service
+          uri: http://localhost:8085
           predicates:
-            - Path=/api/platform/**
-          filters:
-            - StripPrefix=1
-
-        # ── 6. 前端静态资源 (Vue :5173) ──
-        - id: alarm-warning-frontend
-          uri: http://localhost:5173
-          predicates:
-            - Path=/frontend/**
-          filters:
-            - StripPrefix=1
+            - Path=/api/**
+          # 无 filters：透传原路径
 
 management:
   endpoints:

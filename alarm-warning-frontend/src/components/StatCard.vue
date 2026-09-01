@@ -1,19 +1,13 @@
 <template>
-  <!-- 科技仪表盘卡片 - 玻璃拟态 + 发光边框 -->
-  <div class="stat-card" :style="cardStyle">
-    <div class="card-glow"></div>
-    <div class="card-content">
-      <div class="stat-icon" :style="iconStyle">
-        <el-icon :size="32"><component :is="icon" /></el-icon>
-      </div>
-      <div class="stat-info">
-        <div class="stat-value" :style="valueStyle">
-          {{ animatedValue }}
-        </div>
-        <div class="stat-label">{{ label }}</div>
-      </div>
+  <!-- Apple 官网数据卡风格：玻璃背景 + 大字体数值 + 悬停上浮 -->
+  <div class="stat-card">
+    <div class="stat-card__icon" :style="iconStyle">
+      <el-icon :size="24"><component :is="icon" /></el-icon>
     </div>
-    <div class="card-decoration"></div>
+    <div class="stat-card__body">
+      <div class="stat-card__value">{{ displayValue }}</div>
+      <div class="stat-card__label">{{ label }}</div>
+    </div>
   </div>
 </template>
 
@@ -24,138 +18,151 @@ const props = defineProps({
   label: { type: String, required: true },
   value: { type: [Number, String], default: 0 },
   icon: { type: String, default: 'DataLine' },
-  color: { type: String, default: '#1890ff' }
+  color: { type: String, default: '#0071E3' }
 })
 
-// 数字动画
+// 数字动画值（仅数值类型参与动画）
 const animatedValue = ref(0)
 
-watch(() => props.value, (newVal) => {
-  animateNumber(Number(newVal) || 0)
+// 是否为纯数值（用于决定是否启用数字滚动动画）
+// 注意：百分比字符串（如 "98.6%"）也按数值处理，动画期间只滚动数字部分
+const isNumeric = computed(() => {
+  if (typeof props.value === 'number') return true
+  if (typeof props.value === 'string') {
+    const cleaned = props.value.replace(/[^\d.]/g, '')
+    return cleaned !== '' && !isNaN(Number(cleaned))
+  }
+  return false
+})
+
+// 提取数值部分
+const numericValue = computed(() => {
+  if (typeof props.value === 'number') return props.value
+  if (typeof props.value === 'string') {
+    const cleaned = props.value.replace(/[^\d.]/g, '')
+    return Number(cleaned) || 0
+  }
+  return 0
+})
+
+// 提取非数字前后缀（如 %、月）
+const suffix = computed(() => {
+  if (typeof props.value !== 'string') return ''
+  const match = props.value.match(/[^\d.]+$/)
+  return match ? match[0] : ''
+})
+
+// 展示值：非数值原样返回，数值显示动画过渡后的整数 + 后缀
+const displayValue = computed(() => {
+  if (!isNumeric.value) return props.value
+  return formatNumber(animatedValue.value) + suffix.value
 })
 
 onMounted(() => {
-  animateNumber(Number(props.value) || 0)
+  if (isNumeric.value) animateNumber(numericValue.value)
 })
 
-const animateNumber = (target) => {
+watch(() => props.value, () => {
+  if (isNumeric.value) animateNumber(numericValue.value)
+})
+
+// 数字滚动动画（cubic ease-out）
+function animateNumber(target) {
   const start = animatedValue.value
   const diff = target - start
   const duration = 800
   const startTime = performance.now()
-
   const step = (currentTime) => {
     const elapsed = currentTime - startTime
     const progress = Math.min(elapsed / duration, 1)
     const eased = 1 - Math.pow(1 - progress, 3)
-    animatedValue.value = Math.round(start + diff * eased)
+    animatedValue.value = start + diff * eased
     if (progress < 1) requestAnimationFrame(step)
   }
   requestAnimationFrame(step)
 }
 
-// 卡片样式
-const cardStyle = computed(() => ({
-  '--card-color': props.color,
-  '--card-glow': props.color + '40',
-  '--card-border': props.color + '60'
-}))
+// 数值格式化：千分位
+function formatNumber(n) {
+  return Math.round(n).toLocaleString('en-US')
+}
 
+// 图标方块样式：Apple 系统色浅色背景
 const iconStyle = computed(() => ({
-  background: `linear-gradient(135deg, ${props.color}33, ${props.color}11)`,
-  color: props.color,
-  boxShadow: `0 0 20px ${props.color}33`
+  backgroundColor: hexToRgba(props.color, 0.12),
+  color: props.color
 }))
 
-const valueStyle = computed(() => ({
-  background: `linear-gradient(135deg, ${props.color}, #ffffff)`,
-  WebkitBackgroundClip: 'text',
-  WebkitTextFillColor: 'transparent',
-  backgroundClip: 'text'
-}))
+// 将 #RRGGBB 转为 rgba(r,g,b,a)；输入异常时回退到 Apple 蓝
+function hexToRgba(hex, alpha) {
+  const fallback = `rgba(0, 113, 227, ${alpha})`
+  if (typeof hex !== 'string') return fallback
+  const m = hex.replace('#', '').match(/^([0-9a-fA-F]{6})$/)
+  if (!m) return fallback
+  const r = parseInt(m[1].slice(0, 2), 16)
+  const g = parseInt(m[1].slice(2, 4), 16)
+  const b = parseInt(m[1].slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
 </script>
 
 <style scoped>
 .stat-card {
-  position: relative;
-  padding: 24px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, rgba(27, 40, 56, 0.8), rgba(13, 27, 42, 0.9));
-  border: 1px solid var(--card-border, rgba(24, 144, 255, 0.3));
-  backdrop-filter: blur(10px);
-  overflow: hidden;
-  transition: all 0.3s ease;
-  cursor: pointer;
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-  border-color: var(--card-color, #1890ff);
-  box-shadow: 0 8px 32px var(--card-glow, rgba(24, 144, 255, 0.3));
-}
-
-.stat-card:hover .card-glow {
-  opacity: 1;
-}
-
-/* 发光效果 */
-.card-glow {
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle, var(--card-glow, rgba(24, 144, 255, 0.2)) 0%, transparent 70%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-}
-
-.card-content {
-  position: relative;
   display: flex;
   align-items: center;
-  gap: 20px;
-  z-index: 1;
+  gap: 16px;
+  /* Apple 玻璃卡片 */
+  background-color: var(--app-card);
+  -webkit-backdrop-filter: blur(var(--app-glass-blur)) saturate(var(--app-glass-saturate));
+  backdrop-filter: blur(var(--app-glass-blur)) saturate(var(--app-glass-saturate));
+  border-radius: var(--app-radius-card);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: var(--app-shadow-card);
+  padding: 24px 28px;
+  box-sizing: border-box;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* Apple 官网数据卡：悬停上浮 4px */
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--app-shadow-hover);
 }
 
-.stat-icon {
+/* 48px 圆角图标方块 */
+.stat-card__icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
   flex-shrink: 0;
 }
 
-.stat-info {
+.stat-card__body {
+  min-width: 0;
   flex: 1;
 }
 
-.stat-value {
-  font-size: 40px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -1px;
+/* Apple 官网风格：42px 大数字 */
+.stat-card__value {
+  font-size: 42px;
+  font-weight: 600;
+  color: var(--app-text-1);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--app-font-number);
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.stat-label {
-  font-size: 14px;
-  color: #8a9bb0;
-  margin-top: 8px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-/* 装饰线条 */
-.card-decoration {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, transparent, var(--card-color, #1890ff), transparent);
-  opacity: 0.6;
+.stat-card__label {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--app-text-3);
+  letter-spacing: 0.01em;
 }
 </style>

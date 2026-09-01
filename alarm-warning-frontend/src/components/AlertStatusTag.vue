@@ -1,6 +1,6 @@
 <template>
   <!-- 预警状态标签组件（对应后端 AlertStatus 枚举） -->
-  <el-tag :type="tagType" effect="dark" size="small">
+  <el-tag :type="tagType" effect="light" size="small">
     {{ statusText }}
   </el-tag>
 </template>

@@ -1,0 +1,347 @@
+/**
+ * 全局主题样式 - Apple Vision Pro / Apple Human Interface Design 风格
+ * 设计原则：
+ *   1. 大圆角（24px）+ 玻璃材质（backdrop-filter blur）
+ *   2. 柔和阴影分层，无强烈边框
+ *   3. SF Pro 字体栈，超大数值字体（42px）
+ *   4. 浅色背景 #f5f7fb，无任何深色/霓虹色
+ */
+
+/* ===================== 设计 Token ===================== */
+:root {
+  /* 应用基础色板（Apple 系统色板） */
+  --app-bg: #F5F7FB;                /* 页面背景 */
+  --app-card: rgba(255, 255, 255, 0.85);  /* 卡片：半透明以支持毛玻璃 */
+  --app-card-solid: #FFFFFF;       /* 不透明场景备用 */
+  --app-primary: #0071E3;          /* Apple System Blue */
+  --app-primary-hover: #0077ED;    /* 主色 hover */
+  --app-primary-soft: rgba(0, 113, 227, 0.08);  /* 激活态浅蓝背景 */
+  --app-text-1: #1D1D1F;           /* Apple 近黑标题色 */
+  --app-text-2: #424245;           /* 正文 */
+  --app-text-3: #6E6E73;           /* 标签/辅助 */
+  --app-text-4: #86868B;           /* 更次级 */
+  --app-border: rgba(0, 0, 0, 0.06); /* 极淡边框 */
+  --app-border-strong: rgba(0, 0, 0, 0.10);
+  --app-hover: rgba(0, 0, 0, 0.03);  /* 悬停填充 */
+  --app-divider: rgba(0, 0, 0, 0.06);
+
+  /* 语义色（Apple System Colors） */
+  --app-color-red: #FF3B30;
+  --app-color-orange: #FF9500;
+  --app-color-yellow: #FFCC00;
+  --app-color-green: #34C759;
+  --app-color-teal: #30C0C0;
+  --app-color-blue: #0071E3;
+  --app-color-indigo: #5856D6;
+  --app-color-purple: #AF52DE;
+  --app-color-pink: #FF2D55;
+
+  /* 圆角（Apple 风格大圆角） */
+  --app-radius-card: 24px;         /* 主卡片 */
+  --app-radius-control: 12px;     /* 输入框/按钮 */
+  --app-radius-small: 8px;        /* 小标签 */
+  --app-radius-tag: 980px;        /* 胶囊形（pill） */
+
+  /* 阴影（Apple Soft Shadows 分层） */
+  --app-shadow-card: 0 10px 30px rgba(0, 0, 0, 0.05);
+  --app-shadow-hover: 0 20px 50px rgba(0, 0, 0, 0.08);
+  --app-shadow-float: 0 4px 12px rgba(0, 0, 0, 0.04);
+
+  /* 玻璃材质参数 */
+  --app-glass-blur: 20px;
+  --app-glass-saturate: 1.8;
+
+  /* 字体族（SF Pro 优先，回退到苹方/PingFang） */
+  --app-font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+    'SF Pro Text', 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  --app-font-number: 'SF Pro Display', -apple-system, 'PingFang SC', sans-serif;
+
+  /* ===================== Element Plus 主色覆盖（Apple Blue） ===================== */
+  --el-color-primary: #0071E3;
+  --el-color-primary-light-3: #4995E8;
+  --el-color-primary-light-5: #80B5EE;
+  --el-color-primary-light-7: #B3D2F4;
+  --el-color-primary-light-8: #CCE0F8;
+  --el-color-primary-light-9: #E5EFFB;
+  --el-color-primary-dark-2: #005BB5;
+
+  /* 让 Element Plus 容器/卡片贴合 Apple 风格 */
+  --el-bg-color: var(--app-card-solid);
+  --el-bg-color-page: var(--app-bg);
+  --el-text-color-primary: var(--app-text-1);
+  --el-text-color-regular: var(--app-text-2);
+  --el-border-color: var(--app-border-strong);
+  --el-border-color-light: var(--app-border);
+  --el-fill-color-light: var(--app-hover);
+  --el-border-radius-base: var(--app-radius-control);
+  --el-border-radius-small: var(--app-radius-small);
+
+  /* 圆角上扬：让 el-table、el-input 等控件贴合 Apple 风格 */
+  --el-border-radius-base: 12px;
+}
+
+/* ===================== 全局基础样式 ===================== */
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  background-color: var(--app-bg);
+  color: var(--app-text-2);
+  font-family: var(--app-font-family);
+  font-size: 14px;
+  line-height: 1.5;
+  /* Apple 字体渲染 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.01em;
+  overflow-x: hidden;
+}
+
+#app {
+  color: var(--app-text-1);
+}
+
+/* 链接默认色 */
+a {
+  color: var(--app-primary);
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+a:hover {
+  opacity: 0.75;
+}
+
+/* ===================== Apple 风格滚动条 ===================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* ===================== 共享工具类 ===================== */
+
+/* 页面标题：用于内容区顶部主标题 */
+.page-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--app-text-1);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+/* 副标题（英文） */
+.page-subtitle {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--app-text-3);
+  letter-spacing: 0.01em;
+  font-weight: 400;
+}
+
+/* Apple 玻璃卡片：背景半透明 + 模糊 + 大圆角 + 软阴影 */
+.app-card {
+  background-color: var(--app-card);
+  -webkit-backdrop-filter: blur(var(--app-glass-blur)) saturate(var(--app-glass-saturate));
+  backdrop-filter: blur(var(--app-glass-blur)) saturate(var(--app-glass-saturate));
+  border-radius: var(--app-radius-card);
+  box-shadow: var(--app-shadow-card);
+  padding: 24px 28px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.app-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--app-shadow-hover);
+}
+
+/* 筛选条：横向排列筛选项 */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
+/* Apple Table 风格：去粗边框、行高 60px、悬停高亮、圆角容器 */
+.app-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.app-table :deep(.el-table) {
+  --el-table-border-color: transparent;
+  --el-table-border: 0;
+  --el-table-text-color: var(--app-text-1);
+  --el-table-header-text-color: var(--app-text-3);
+  --el-table-row-hover-bg-color: var(--app-hover);
+  background: transparent;
+  border-radius: var(--app-radius-control);
+  overflow: hidden;
+}
+.app-table :deep(.el-table__inner-wrapper::before),
+.app-table :deep(.el-table__border-left-patch) {
+  display: none !important;
+}
+.app-table :deep(.el-table tr) {
+  background: transparent;
+}
+.app-table :deep(.el-table th.el-table__cell) {
+  background-color: transparent;
+  border-bottom: 1px solid var(--app-border);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--app-text-3);
+  letter-spacing: 0.01em;
+  padding: 14px 0;
+}
+.app-table :deep(.el-table td.el-table__cell) {
+  border-bottom: 1px solid var(--app-border);
+  padding: 18px 0;
+}
+.app-table :deep(.el-table__row:hover > td) {
+  background-color: var(--app-hover) !important;
+}
+.app-table :deep(.el-table__body-wrapper) {
+  border-radius: var(--app-radius-control);
+}
+
+/* 卡片内部小标题（统一图表卡片头部样式） */
+.card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.card-title__text {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--app-text-1);
+  letter-spacing: -0.01em;
+}
+.card-title__badge {
+  font-size: 12px;
+  color: var(--app-primary);
+  background-color: var(--app-primary-soft);
+  padding: 4px 12px;
+  border-radius: var(--app-radius-tag);
+  font-weight: 500;
+}
+
+/* ===================== Apple 风格 Element Plus 控件覆写 ===================== */
+
+/* 输入框：大圆角、轻边框 */
+.el-input__wrapper {
+  border-radius: 12px !important;
+  background-color: rgba(255, 255, 255, 0.7) !important;
+  box-shadow: 0 0 0 1px var(--app-border-strong) !important;
+  transition: box-shadow 0.2s ease, background-color 0.2s ease !important;
+}
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2) !important;
+}
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 2px var(--app-primary) !important;
+  background-color: #fff !important;
+}
+
+/* 按钮：圆角化 */
+.el-button {
+  border-radius: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.el-button--primary {
+  background-color: var(--app-primary);
+  border-color: var(--app-primary);
+}
+.el-button--primary:hover {
+  background-color: var(--app-primary-hover);
+  border-color: var(--app-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 113, 227, 0.3);
+}
+
+/* 分页器 */
+.el-pagination {
+  --el-pagination-button-color: var(--app-text-2);
+}
+.el-pagination .el-pager li,
+.el-pagination .btn-prev,
+.el-pagination .btn-next {
+  border-radius: 8px !important;
+  margin: 0 2px;
+}
+.el-pagination .el-pager li.is-active {
+  background-color: var(--app-primary) !important;
+  color: #fff !important;
+}
+
+/* 对话框：大圆角 */
+.el-dialog {
+  border-radius: 24px !important;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15) !important;
+}
+.el-dialog__header {
+  border-bottom: 1px solid var(--app-border);
+  padding: 20px 24px;
+  margin: 0;
+}
+.el-dialog__title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--app-text-1);
+}
+.el-dialog__body {
+  padding: 24px;
+}
+.el-dialog__footer {
+  border-top: 1px solid var(--app-border);
+  padding: 16px 24px;
+}
+
+/* ===================== Vue Transition：页面切换淡入淡出 300ms ===================== */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* 纯淡入淡出（全局统一使用，无位移） */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
