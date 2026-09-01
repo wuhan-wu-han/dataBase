@@ -11,8 +11,10 @@ import com.utc.alert.entity.AlertEvent;
 import com.utc.alert.entity.AlertGroup;
 import com.utc.alert.mapper.AlertEventMapper;
 import com.utc.alert.mapper.AlertGroupMapper;
+import com.utc.alert.kafka.producer.AlertEventProducer;
 import com.utc.alert.service.AlertDedupService;
 import com.utc.alert.service.AlertEngineService;
+import com.utc.alert.service.PriorityCalcService;
 import com.utc.alert.service.RootCauseService;
 import com.utc.alert.service.RuleMatchService;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,8 @@ public class AlertEngineServiceImpl implements AlertEngineService {
     private final RuleMatchService ruleMatchService;
     private final RootCauseService rootCauseService;
     private final AlertDedupService alertDedupService;
+    private final PriorityCalcService priorityCalcService;
+    private final AlertEventProducer alertEventProducer;
     private final AlertEventMapper alertEventMapper;
     private final AlertGroupMapper alertGroupMapper;
 
@@ -108,10 +112,20 @@ public class AlertEngineServiceImpl implements AlertEngineService {
                 event.setMergedCount(1);
             }
 
+            try {
+                int priorityScore = priorityCalcService.calculate(event);
+                event.setPriorityScore(priorityScore);
+            } catch (Exception e) {
+                log.error("Priority calculation failed, eventId={}", message.getEventId(), e);
+                event.setPriorityScore(0);
+            }
+
             alertEventMapper.insert(event);
             log.info("Alert event created: alertEventCode={}, alertLevel={}, deviceId={}, alertGroupId={}",
                     event.getAlertEventCode(), event.getAlertLevel(),
                     event.getDeviceId(), event.getAlertGroupId());
+
+            alertEventProducer.send(event);
         } catch (Exception e) {
             log.error("Failed to save alert event, eventId={}", message.getEventId(), e);
         }
