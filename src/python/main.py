@@ -55,6 +55,13 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 output_dir = os.path.join(project_root, "output")
 app.mount("/output", StaticFiles(directory=output_dir), name="output")
 
+# 注册工单全流程管理子模块路由
+try:
+    from workorder import router as workorder_router
+except ImportError:
+    from src.python.workorder import router as workorder_router
+app.include_router(workorder_router)
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================
