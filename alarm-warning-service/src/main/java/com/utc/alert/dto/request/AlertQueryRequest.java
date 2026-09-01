@@ -14,4 +14,6 @@ public class AlertQueryRequest {
     private String status;
 
     private String areaId;
+
+    private String deviceType;
 }

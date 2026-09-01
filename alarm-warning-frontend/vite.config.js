@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
   plugins: [vue()],
@@ -7,7 +8,6 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // 将 /api 请求代理到 Spring Boot 后端
       '/api': {
         target: 'http://localhost:8085',
         changeOrigin: true
@@ -17,7 +17,7 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      '@': '/src'
+      '@': fileURLToPath(new URL('./src', import.meta.url))
     }
   }
 })

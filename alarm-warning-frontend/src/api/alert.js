@@ -18,7 +18,5 @@ export function getAlertDetail(id) {
  * 更新预警事件状态（确认 / 处理 / 关闭）
  */
 export function updateAlertStatus(id, status) {
-  return request.patch(`/alerts/${id}/status`, null, {
-    params: { status }
-  })
+  return request.patch(`/alerts/${id}/status`, { status })
 }

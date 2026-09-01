@@ -33,6 +33,9 @@ public class AlertRuleServiceImpl implements AlertRuleService {
         Page<AlertRule> page = new Page<>(request.getPage(), request.getSize());
 
         LambdaQueryWrapper<AlertRule> wrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(request.getRuleName())) {
+            wrapper.like(AlertRule::getRuleName, request.getRuleName());
+        }
         if (StringUtils.hasText(request.getDeviceType())) {
             wrapper.eq(AlertRule::getDeviceType, request.getDeviceType());
         }

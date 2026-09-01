@@ -9,6 +9,8 @@ public class AlertRuleQueryRequest {
 
     private Integer size = 10;
 
+    private String ruleName;
+
     private String deviceType;
 
     private String alertLevel;

@@ -49,6 +49,9 @@ public class AlertServiceImpl implements AlertService {
         if (StringUtils.hasText(request.getAreaId())) {
             wrapper.eq(AlertEvent::getAreaId, request.getAreaId());
         }
+        if (StringUtils.hasText(request.getDeviceType())) {
+            wrapper.eq(AlertEvent::getDeviceType, request.getDeviceType());
+        }
         wrapper.orderByDesc(AlertEvent::getCreatedAt);
 
         Page<AlertEvent> result = alertEventMapper.selectPage(page, wrapper);
