@@ -25,6 +25,12 @@ const routes = [
     name: 'RuleManage',
     component: () => import('@/views/RuleManage.vue'),
     meta: { title: '规则管理' }
+  },
+  {
+    path: '/failure-prediction',
+    name: 'FailurePrediction',
+    component: () => import('@/views/FailurePrediction.vue'),
+    meta: { title: '故障预报与寿命预测' }
   }
 ]
 

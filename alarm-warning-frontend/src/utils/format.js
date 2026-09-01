@@ -18,26 +18,25 @@ export function formatDateTime(value) {
 }
 
 /**
- * 预警等级文本映射
+ * 预警等级文本映射（对应后端 AlertLevel 枚举）
  */
 export function getAlertLevelText(level) {
   const map = {
-    CRITICAL: '紧急',
-    HIGH: '重要',
-    MEDIUM: '一般',
-    LOW: '提示'
+    BLUE: '蓝色预警',
+    YELLOW: '黄色预警',
+    ORANGE: '橙色预警',
+    RED: '红色预警'
   }
   return map[level] || level
 }
 
 /**
- * 预警状态文本映射
+ * 预警状态文本映射（对应后端 AlertStatus 枚举）
  */
 export function getAlertStatusText(status) {
   const map = {
-    TRIGGERED: '已触发',
+    OPEN: '待处理',
     ACKNOWLEDGED: '已确认',
-    PROCESSING: '处理中',
     RESOLVED: '已解决',
     CLOSED: '已关闭'
   }

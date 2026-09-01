@@ -1,8 +1,8 @@
 <template>
-  <!-- 预警等级标签组件 -->
-  <span class="alert-level-tag" :class="levelClass">
+  <!-- 预警等级标签组件（对应后端 AlertLevel 枚举） -->
+  <el-tag :type="tagType" effect="dark" size="small">
     {{ levelText }}
-  </span>
+  </el-tag>
 </template>
 
 <script setup>
@@ -16,29 +16,17 @@ const props = defineProps({
   }
 })
 
+// 等级文本
 const levelText = computed(() => getAlertLevelText(props.level))
 
-const levelClass = computed(() => {
+// Element Plus Tag 类型映射
+const tagType = computed(() => {
   const map = {
-    CRITICAL: 'level-critical',
-    HIGH: 'level-high',
-    MEDIUM: 'level-medium',
-    LOW: 'level-low'
+    BLUE: 'info',
+    YELLOW: 'warning',
+    ORANGE: 'warning',
+    RED: 'danger'
   }
-  return map[props.level] || ''
+  return map[props.level] || 'info'
 })
 </script>
-
-<style scoped>
-.alert-level-tag {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: bold;
-}
-.level-critical { background: #ff4d4f; color: #fff; }
-.level-high     { background: #fa8c16; color: #fff; }
-.level-medium   { background: #fadb14; color: #333; }
-.level-low      { background: #52c41a; color: #fff; }
-</style>

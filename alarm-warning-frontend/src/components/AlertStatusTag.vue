@@ -1,8 +1,8 @@
 <template>
-  <!-- 预警状态标签组件 -->
-  <span class="alert-status-tag" :class="statusClass">
+  <!-- 预警状态标签组件（对应后端 AlertStatus 枚举） -->
+  <el-tag :type="tagType" effect="dark" size="small">
     {{ statusText }}
-  </span>
+  </el-tag>
 </template>
 
 <script setup>
@@ -16,30 +16,17 @@ const props = defineProps({
   }
 })
 
+// 状态文本
 const statusText = computed(() => getAlertStatusText(props.status))
 
-const statusClass = computed(() => {
+// Element Plus Tag 类型映射
+const tagType = computed(() => {
   const map = {
-    TRIGGERED: 'status-triggered',
-    ACKNOWLEDGED: 'status-acknowledged',
-    PROCESSING: 'status-processing',
-    RESOLVED: 'status-resolved',
-    CLOSED: 'status-closed'
+    OPEN: 'danger',
+    ACKNOWLEDGED: 'warning',
+    RESOLVED: 'success',
+    CLOSED: 'info'
   }
-  return map[props.status] || ''
+  return map[props.status] || 'info'
 })
 </script>
-
-<style scoped>
-.alert-status-tag {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-}
-.status-triggered    { background: #ff4d4f; color: #fff; }
-.status-acknowledged { background: #fa8c16; color: #fff; }
-.status-processing   { background: #1890ff; color: #fff; }
-.status-resolved     { background: #52c41a; color: #fff; }
-.status-closed       { background: #8c8c8c; color: #fff; }
-</style>

@@ -145,3 +145,38 @@ INSERT INTO `alert_event` (`alert_event_code`, `source_event_id`, `source`, `dev
 -- 预警聚合组（测试）
 INSERT INTO `alert_group` (`group_code`, `area_id`, `zone`, `highest_level`, `total_count`, `group_status`, `window_start`, `window_end`) VALUES
 ('GRP-20260831-A01-001', 'AREA-A01', 'ZONE-A01', 'ORANGE', 1, 'OPEN', '2026-08-31 10:00:00', '2026-08-31 10:10:00');
+
+-- ============================================================
+-- 5. failure_prediction 故障预报与寿命预测表
+-- ============================================================
+DROP TABLE IF EXISTS `failure_prediction`;
+CREATE TABLE `failure_prediction` (
+    `id`                    BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `device_id`             VARCHAR(64)   NOT NULL COMMENT '设备唯一标识',
+    `device_type`           VARCHAR(64)   NOT NULL COMMENT '设备类型：PRESSURE / TEMPERATURE / CH4 / H2S 等',
+    `area_id`               VARCHAR(64)   NOT NULL COMMENT '所属区域标识',
+    `health_score`          DECIMAL(5,2)  NOT NULL COMMENT '健康度评分 0.00-100.00',
+    `risk_score`            DECIMAL(5,2)  NOT NULL COMMENT '风险评分 0.00-100.00',
+    `failure_probability`   DECIMAL(5,2)  NOT NULL COMMENT '故障概率 0.00-100.00',
+    `remaining_life_month`  INT           NOT NULL COMMENT '剩余寿命（月）',
+    `prediction_level`      VARCHAR(20)   NOT NULL COMMENT '预测等级：LOW / MEDIUM / HIGH / CRITICAL',
+    `prediction_time`       DATETIME      NOT NULL COMMENT '预测生成时间',
+    `created_at`            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_device_id` (`device_id`),
+    KEY `idx_device_type` (`device_type`),
+    KEY `idx_area_id` (`area_id`),
+    KEY `idx_prediction_level` (`prediction_level`),
+    KEY `idx_prediction_time` (`prediction_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='故障预报与寿命预测表';
+
+-- 故障预测（测试数据）
+INSERT INTO `failure_prediction` (`device_id`, `device_type`, `area_id`, `health_score`, `risk_score`, `failure_probability`, `remaining_life_month`, `prediction_level`, `prediction_time`) VALUES
+('SENSOR-P-001', 'PRESSURE',    'AREA-A01', 72.50,  35.20,  18.50,  24, 'LOW',      '2026-09-01 08:00:00'),
+('SENSOR-T-015', 'TEMPERATURE', 'AREA-A03', 45.80,  68.40,  52.30,   8, 'HIGH',     '2026-09-01 08:00:00'),
+('SENSOR-CH4-07','CH4',         'AREA-B02', 30.20,  82.10,  78.60,   3, 'CRITICAL', '2026-09-01 08:00:00'),
+('SENSOR-H2S-03','H2S',         'AREA-A02', 88.00,  12.50,   5.20,  36, 'LOW',      '2026-09-01 08:00:00'),
+('SENSOR-P-009', 'PRESSURE',    'AREA-A03', 58.30,  55.00,  38.70,  14, 'MEDIUM',   '2026-09-01 08:00:00'),
+('SENSOR-T-022', 'TEMPERATURE', 'AREA-B02', 62.10,  48.30,  28.40,  18, 'MEDIUM',   '2026-09-01 08:00:00'),
+('SENSOR-CH4-12','CH4',         'AREA-A01', 38.50,  75.60,  65.20,   5, 'HIGH',     '2026-09-01 08:00:00'),
+('SENSOR-H2S-08','H2S',         'AREA-A03', 91.20,   8.30,   3.10,  42, 'LOW',      '2026-09-01 08:00:00');
