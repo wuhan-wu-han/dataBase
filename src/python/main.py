@@ -90,6 +90,13 @@ except ImportError:
     from src.python.plan_api import router as plan_router  # 项目根启动
 app.include_router(plan_router)
 
+# 注册资产价值与成本管理子模块路由（兼容两种启动方式）
+try:
+    from asset_cost import router as asset_cost_router            # cd src/python 后启动
+except ImportError:
+    from src.python.asset_cost import router as asset_cost_router  # 项目根启动
+app.include_router(asset_cost_router)
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================
