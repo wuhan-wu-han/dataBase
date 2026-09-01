@@ -83,6 +83,13 @@ except ImportError:
     from src.python.tunnel_api import router as tunnel_router  # 项目根启动
 app.include_router(tunnel_router)
 
+# 注册数字化预案管理子模块路由（兼容两种启动方式）
+try:
+    from plan_api import router as plan_router            # cd src/python 后启动
+except ImportError:
+    from src.python.plan_api import router as plan_router  # 项目根启动
+app.include_router(plan_router)
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================

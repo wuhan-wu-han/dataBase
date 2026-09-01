@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数字化预案管理指挥大屏</title>
+<script src="echarts.min.js"></script>
+<style>
+  :root {
+    --bg-deep: #0f1115;
+    --bg-panel: rgba(23, 26, 33, 0.82);
+    --bg-card: rgba(31, 35, 44, 0.9);
+    --primary: #f59e0b;
+    --primary-dim: rgba(245, 158, 11, 0.16);
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --crit: #ef4444;
+    --info: #60a5fa;
+    --text: #e5e7eb;
+    --text-dim: #9ca3af;
+    --text-faint: #6b7280;
+    --border: rgba(245, 158, 11, 0.14);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100vw; height: 100vh; overflow-x: auto; overflow-y: hidden; background: var(--bg-deep); }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    color: var(--text);
+  }
+  .screen {
+    display: flex; flex-direction: column;
+    width: 100vw; min-width: 1280px; height: 100vh;
+    padding: 12px 16px 14px;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% -10%, rgba(245, 158, 11, 0.07), transparent 60%),
+      radial-gradient(ellipse 60% 50% at 90% 110%, rgba(239, 68, 68, 0.05), transparent 60%),
+      linear-gradient(180deg, #0f1115 0%, #12141a 100%);
+  }
+
+  /* ===== 标题栏 ===== */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 54px; padding: 0 8px; flex: none;
+  }
+  .header h1 {
+    font-size: 24px; font-weight: 700; letter-spacing: 3px;
+    background: linear-gradient(90deg, #fbbf24, #f59e0b 45%, #ef4444);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .header h1::before { content: "◤ "; color: var(--primary); -webkit-text-fill-color: var(--primary); font-size: 18px; }
+  .header-right { display: flex; align-items: center; gap: 18px; }
+  .link-lamp { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text-dim); }
+  .link-lamp .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-faint); }
+  .link-lamp.on .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: breathe 2s infinite; }
+  .link-lamp.off .dot { background: var(--crit); }
+  @keyframes breathe { 50% { opacity: 0.45; } }
+  #clock { font-size: 15px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+  /* ===== KPI 条 ===== */
+  .kpis {
+    display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px;
+    margin: 8px 0 12px; flex: none;
+  }
+  .kpi {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    position: relative; overflow: hidden;
+    backdrop-filter: blur(6px);
+  }
+  .kpi::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: linear-gradient(180deg, var(--primary), transparent);
+  }
+  .kpi .value { font-size: 26px; font-weight: 700; color: var(--primary); font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .kpi .value .unit { font-size: 13px; font-weight: 400; color: var(--text-dim); margin-left: 3px; }
+  .kpi .label { font-size: 12px; color: var(--text-dim); margin-top: 3px; letter-spacing: 1px; }
+  .kpi.crit .value { color: var(--crit); }
+  .kpi.crit::before { background: linear-gradient(180deg, var(--crit), transparent); }
+  .kpi.ok .value { color: var(--ok); }
+  .kpi.ok::before { background: linear-gradient(180deg, var(--ok), transparent); }
+
+  /* ===== 主体三栏 ===== */
+  .main {
+    flex: 1; min-height: 0;
+    display: grid; grid-template-columns: 400px 1fr 430px; gap: 12px;
+  }
+  .panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    backdrop-filter: blur(8px);
+    display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden;
+  }
+  .panel-title {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+    font-size: 15px; font-weight: 600; letter-spacing: 2px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    background: linear-gradient(90deg, var(--primary-dim), transparent 70%);
+  }
+  .panel-title::before {
+    content: ""; width: 4px; height: 15px; border-radius: 2px;
+    background: linear-gradient(180deg, var(--primary), var(--crit));
+  }
+  .panel-title .sub { font-size: 12px; font-weight: 400; color: var(--text-faint); letter-spacing: 0; margin-left: auto; }
+  .panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; }
+  .panel-body::-webkit-scrollbar { width: 5px; }
+  .panel-body::-webkit-scrollbar-thumb { background: rgba(245, 158, 11, 0.25); border-radius: 3px; }
+
+  /* ===== 左栏：预案库 ===== */
+  #categoryChart { flex: none; height: 215px; }
+  .plan-item {
+    background: var(--bg-card);
+    border: 1px solid transparent;
+    border-left: 3px solid var(--text-faint);
+    border-radius: 8px;
+    padding: 9px 11px; margin-bottom: 8px;
+    cursor: pointer; transition: all 0.18s;
+  }
+  .plan-item:hover { border-color: rgba(245, 158, 11, 0.35); }
+  .plan-item.selected { border-color: rgba(245, 158, 11, 0.55); background: rgba(245, 158, 11, 0.08); }
+  .plan-item .row1 { display: flex; align-items: center; gap: 6px; }
+  .plan-item .pname { font-size: 13.5px; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .plan-item .row2 { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11.5px; color: var(--text-faint); }
+  .badge {
+    display: inline-block; padding: 1px 7px; border-radius: 4px;
+    font-size: 11px; line-height: 1.6; white-space: nowrap;
+  }
+  .badge.cat { background: rgba(96, 165, 250, 0.14); color: var(--info); }
+  .badge.status-active { background: rgba(52, 211, 153, 0.14); color: var(--ok); }
+  .badge.status-draft { background: rgba(156, 163, 175, 0.16); color: var(--text-dim); }
+  .badge.status-deprecated { background: rgba(239, 68, 68, 0.14); color: var(--crit); }
+  .badge.lv1 { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
+  .badge.lv2 { background: rgba(239, 68, 68, 0.15); color: var(--crit); }
+  .badge.prio { background: var(--primary-dim); color: var(--primary); }
+  .badge.prio.hot { background: rgba(239, 68, 68, 0.18); color: var(--crit); }
+
+  /* ===== 中栏：匹配指挥台 ===== */
+  .center { display: flex; flex-direction: column; min-height: 0; }
+  .live-section { flex: 1.25; min-height: 0; display: flex; flex-direction: column; }
+  .act-section { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid rgba(255,255,255,0.05); }
+  .match-card {
+    background: var(--bg-card);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-left: 3px solid var(--text-faint);
+    border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 9px;
+  }
+  .match-card.lv1 { border-left-color: var(--warn); }
+  .match-card.lv2 { border-left-color: var(--crit); }
+  .match-card.fallback { border-left-color: var(--text-faint); background: rgba(107, 114, 128, 0.1); }
+  .match-alarm { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+  .match-alarm .desc { font-weight: 600; }
+  .match-alarm .loc { color: var(--text-faint); }
+  .match-alarm .time { margin-left: auto; color: var(--text-faint); font-size: 11px; }
+  .match-best { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .match-best .arrow { color: var(--primary); font-size: 15px; }
+  .match-best .plan { flex: 1; min-width: 0; }
+  .match-best .plan .name { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .match-best .plan .id { font-size: 11px; color: var(--text-faint); }
+  .score-ring {
+    flex: none; width: 52px; height: 52px; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: conic-gradient(var(--primary) calc(var(--pct) * 1%), rgba(255,255,255,0.07) 0);
+    position: relative;
+  }
+  .score-ring::before { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--bg-card); }
+  .score-ring .num { position: relative; font-size: 16px; font-weight: 700; color: var(--primary); line-height: 1; }
+  .score-ring .cap { position: relative; font-size: 9px; color: var(--text-faint); margin-top: 2px; }
+  .match-reasons { margin-top: 7px; display: flex; flex-wrap: wrap; gap: 5px; }
+  .match-reasons .reason {
+    font-size: 11px; color: var(--text-dim);
+    background: rgba(255, 255, 255, 0.045); border-radius: 4px; padding: 2px 7px;
+  }
+  .match-actions { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+  .btn {
+    border: 1px solid rgba(245, 158, 11, 0.5); background: var(--primary-dim);
+    color: var(--primary); font-size: 12px; padding: 4px 14px; border-radius: 6px;
+    cursor: pointer; transition: all 0.15s; letter-spacing: 1px;
+  }
+  .btn:hover { background: rgba(245, 158, 11, 0.3); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn.small { padding: 2px 10px; font-size: 11px; }
+  .btn.ghost { border-color: rgba(255,255,255,0.15); background: transparent; color: var(--text-dim); }
+  .btn.ghost:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+  .acked-tag { font-size: 11px; color: var(--ok); margin-left: auto; }
+  .fallback-msg { font-size: 12.5px; color: var(--text-dim); margin-top: 7px; line-height: 1.5; }
+  .empty-tip { text-align: center; color: var(--text-faint); font-size: 13px; padding: 30px 0; }
+
+  /* 激活实例 */
+  .act-card {
+    background: var(--bg-card);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px; padding: 10px 12px; margin-bottom: 9px;
+  }
+  .act-head { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+  .act-head .name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act-head .trig { font-size: 11px; color: var(--text-faint); }
+  .steps { display: flex; gap: 4px; margin-top: 9px; }
+  .step {
+    flex: 1; height: 22px; border-radius: 4px; position: relative;
+    background: rgba(255, 255, 255, 0.05);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: var(--text-faint); overflow: hidden;
+  }
+  .step.done { background: rgba(52, 211, 153, 0.2); color: var(--ok); }
+  .step.next { background: var(--primary-dim); color: var(--primary); animation: breathe 1.6s infinite; }
+  .act-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; color: var(--text-faint); }
+  .act-foot .prog { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .badge.st-running { background: rgba(245, 158, 11, 0.16); color: var(--primary); }
+  .badge.st-finished { background: rgba(52, 211, 153, 0.14); color: var(--ok); }
+
+  /* ===== 右栏：预案详情 ===== */
+  .detail-head { background: var(--bg-card); border-radius: 10px; padding: 12px 13px; margin-bottom: 10px; }
+  .detail-head .dname { font-size: 15px; font-weight: 700; line-height: 1.4; }
+  .detail-head .dmeta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .detail-head .dobj { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.55; }
+  .detail-head .dcmd { font-size: 11.5px; color: var(--text-faint); margin-top: 6px; }
+  .node-item {
+    position: relative; background: var(--bg-card);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px; padding: 10px 12px; margin-bottom: 9px;
+  }
+  .node-item::before {
+    content: attr(data-seq); position: absolute; left: -1px; top: 10px;
+    background: var(--primary); color: #1a1206; font-size: 11px; font-weight: 700;
+    padding: 1px 7px; border-radius: 0 6px 6px 0;
+  }
+  .node-head { display: flex; align-items: center; gap: 7px; padding-left: 26px; }
+  .node-head .ntitle { font-size: 13.5px; font-weight: 600; flex: 1; }
+  .node-head .ntype { font-size: 11px; color: var(--info); background: rgba(96,165,250,0.12); padding: 1px 7px; border-radius: 4px; }
+  .node-body { padding: 7px 2px 0 26px; font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+  .node-body .line { display: flex; gap: 6px; margin-top: 3px; }
+  .node-body .line .k { color: var(--text-faint); flex: none; width: 58px; }
+  .node-body .line .v { flex: 1; }
+  .node-body .acts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+  .node-body .act-tag { background: rgba(255,255,255,0.05); border-radius: 4px; padding: 2px 7px; font-size: 11px; }
+  .node-body .act-tag.auto { border: 1px solid rgba(52, 211, 153, 0.35); color: var(--ok); }
+  .detail-foot { margin-top: 4px; font-size: 11px; color: var(--text-faint); text-align: right; }
+</style>
+</head>
+<body>
+<div class="screen">
+  <!-- 标题栏 -->
+  <div class="header">
+    <h1>数字化预案管理指挥大屏</h1>
+    <div class="header-right">
+      <div class="link-lamp" id="linkLamp"><span class="dot"></span><span id="linkText">管廊联动检测中</span></div>
+      <span id="clock">--</span>
+    </div>
+  </div>
+
+  <!-- KPI 条 -->
+  <div class="kpis">
+    <div class="kpi"><div class="value" id="kTotal">--</div><div class="label">预案总数</div></div>
+    <div class="kpi ok"><div class="value" id="kCov">--</div><div class="label">类别覆盖</div></div>
+    <div class="kpi"><div class="value" id="kMatch">--</div><div class="label">今日匹配</div></div>
+    <div class="kpi"><div class="value" id="kRunning">--</div><div class="label">激活中</div></div>
+    <div class="kpi ok"><div class="value" id="kFinished">--</div><div class="label">已完结</div></div>
+    <div class="kpi"><div class="value" id="kDrill">--</div><div class="label">今日演练</div></div>
+    <div class="kpi"><div class="value" id="kScore">--</div><div class="label">平均匹配分</div></div>
+    <div class="kpi crit"><div class="value" id="kUnhandled">--</div><div class="label">未处理告警</div></div>
+  </div>
+
+  <!-- 三栏主体 -->
+  <div class="main">
+    <!-- 左：预案库 -->
+    <div class="panel">
+      <div class="panel-title">预案库 <span class="sub" id="planCount"></span></div>
+      <div id="categoryChart"></div>
+      <div class="panel-body" id="planList"><div class="empty-tip">加载中…</div></div>
+    </div>
+
+    <!-- 中：智能匹配指挥台 -->
+    <div class="panel center">
+      <div class="live-section">
+        <div class="panel-title">智能匹配指挥台 <span class="sub">管廊告警实时联动 · 自动评分</span></div>
+        <div class="panel-body" id="liveList"><div class="empty-tip">等待管廊告警…</div></div>
+      </div>
+      <div class="act-section">
+        <div class="panel-title">处置实例 <span class="sub" id="actCount"></span></div>
+        <div class="panel-body" id="actList"><div class="empty-tip">暂无激活实例</div></div>
+      </div>
+    </div>
+
+    <!-- 右：结构化预案详情 -->
+    <div class="panel">
+      <div class="panel-title">结构化预案详情 <span class="sub" id="detailId"></span></div>
+      <div class="panel-body" id="detailBody"><div class="empty-tip">点击左侧预案查看结构化详情</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var state = {
+    selectedPlanId: null,
+    plans: [],
+    categories: {},
+    busy: {},
+    charts: {}
+  };
+
+  var NODE_TYPE_NAMES = {
+    detect: '侦检确认', notify: '通报预警', isolate: '隔离控制',
+    rescue: '应急处置', restore: '恢复重建', verify: '核查复盘'
+  };
+  var LEVEL_BADGE = { 1: ['lv1', '预警'], 2: ['lv2', '严重'] };
+
+  /* ---------- 工具 ---------- */
+  function $(id) { return document.getElementById(id); }
+  function setText(id, value) {
+    var el = $(id);
+    if (!el) return;
+    var text = (value == null) ? '--' : String(value);
+    var unit = el.querySelector('.unit');
+    if (unit && el.childNodes.length && el.childNodes[0].nodeType === 3) {
+      el.childNodes[0].nodeValue = text;
+    } else if (!unit) {
+      el.textContent = text;
+    }
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function shortTime(ts) {
+    if (!ts) return '';
+    return String(ts).slice(11, 19);
+  }
+  function fetchJSON(path, opts) {
+    return fetch(path, opts).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+  /* 轮询包装：请求未回包跳过本轮，页面隐藏暂停 */
+  function poller(name, intervalMs, fn) {
+    setInterval(function () {
+      if (document.hidden || state.busy[name]) return;
+      state.busy[name] = true;
+      fn().catch(function () {}).then(function () { state.busy[name] = false; });
+    }, intervalMs);
+  }
+
+  /* ---------- KPI ---------- */
+  function renderOverview(d) {
+    if (!d) return;
+    setText('kTotal', d.total_plans);
+    setText('kCov', d.categories_covered + '/' + d.categories_total);
+    setText('kMatch', d.today_match_count);
+    setText('kRunning', d.running_activations);
+    setText('kFinished', d.finished_activations);
+    setText('kDrill', d.today_drill_count);
+    setText('kScore', d.avg_match_score == null ? '--' : d.avg_match_score);
+    setText('kUnhandled', d.unhandled_tunnel_alarms);
+    var lamp = $('linkLamp');
+    if (d.tunnel_linked) {
+      lamp.className = 'link-lamp on';
+      $('linkText').textContent = '管廊联动正常';
+    } else {
+      lamp.className = 'link-lamp off';
+      $('linkText').textContent = '管廊未联动';
+    }
+  }
+
+  /* ---------- 预案库 ---------- */
+  function renderCategoryChart(cats) {
+    var el = $('categoryChart');
+    if (!el) return;
+    if (!state.charts.cat) state.charts.cat = echarts.init(el);
+    var data = cats.map(function (c) { return { name: c.name, value: c.plan_count, code: c.code }; });
+    state.charts.cat.setOption({
+      color: ['#f59e0b', '#ef4444', '#60a5fa', '#34d399', '#a78bfa', '#fbbf24', '#f472b6', '#9ca3af'],
+      tooltip: { trigger: 'item', formatter: '{b}：{c} 份预案', backgroundColor: 'rgba(15,17,21,0.95)', borderColor: 'rgba(245,158,11,0.3)', textStyle: { color: '#e5e7eb' } },
+      legend: { show: false },
+      series: [{
+        type: 'pie', radius: ['52%', '74%'], center: ['38%', '50%'],
+        label: { show: false }, labelLine: { show: false },
+        itemStyle: { borderColor: '#0f1115', borderWidth: 2 },
+        emphasis: { scale: true, scaleSize: 4 },
+        data: data
+      }],
+      graphic: data.length ? [{
+        type: 'text', left: '64%', top: 'middle',
+        style: {
+          text: data.map(function (d) { return d.name + '  ' + d.value; }).join('\n'),
+          fill: '#9ca3af', fontSize: 12, lineHeight: 20
+        }
+      }] : []
+    });
+  }
+
+  function planBadges(p) {
+    var catName = (state.categories[p.category] || {}).name || p.category;
+    var st = p.status || 'draft';
+    var stName = { active: '启用', draft: '草稿', deprecated: '停用' }[st] || st;
+    var lv = 'L' + p.level_min + (p.level_max !== p.level_min ? '-' + p.level_max : '');
+    var hot = p.priority <= 3 ? ' hot' : '';
+    return '<span class="badge cat">' + esc(catName) + '</span>' +
+      '<span class="badge status-' + esc(st) + '">' + stName + '</span>' +
+      '<span class="badge lv' + p.level_max + '">' + lv + '</span>' +
+      '<span class="badge prio' + hot + '">P' + p.priority + '</span>';
+  }
+
+  function renderPlanList(d) {
+    if (!d) return;
+    state.plans = d.plans || [];
+    setText('planCount', '共 ' + state.plans.length + ' 份');
+    var box = $('planList');
+    if (!state.plans.length) {
+      box.innerHTML = '<div class="empty-tip">暂无预案</div>';
+      return;
+    }
+    var html = state.plans.map(function (p) {
+      var sel = p.plan_id === state.selectedPlanId ? ' selected' : '';
+      return '<div class="plan-item' + sel + '" data-id="' + esc(p.plan_id) + '">' +
+        '<div class="row1"><span class="pname">' + esc(p.plan_name) + '</span></div>' +
+        '<div class="row2">' + planBadges(p) +
+        '<span style="margin-left:auto">' + (p.flow_nodes ? p.flow_nodes.length : 0) + ' 节点</span></div>' +
+        '</div>';
+    }).join('');
+    box.innerHTML = html;
+    Array.prototype.forEach.call(box.querySelectorAll('.plan-item'), function (el) {
+      el.addEventListener('click', function () { selectPlan(el.getAttribute('data-id')); });
+    });
+    if (!state.selectedPlanId && state.plans.length) selectPlan(state.plans[0].plan_id);
+  }
+
+  /* ---------- 预案详情 ---------- */
+  function selectPlan(planId) {
+    state.selectedPlanId = planId;
+    Array.prototype.forEach.call(document.querySelectorAll('.plan-item'), function (el) {
+      el.classList.toggle('selected', el.getAttribute('data-id') === planId);
+    });
+    fetchJSON('/plan/plans/' + encodeURIComponent(planId))
+      .then(renderDetail)
+      .catch(function () { $('detailBody').innerHTML = '<div class="empty-tip">详情加载失败</div>'; });
+  }
+
+  function renderDetail(p) {
+    if (!p) return;
+    setText('detailId', p.plan_id);
+    var nodes = (p.flow_nodes || []).map(function (n) {
+      var resp = n.responsible || {};
+      var res = (n.resources || []).map(function (r) {
+        return esc(r.name) + '×' + esc(r.quantity) + esc(r.unit || '');
+      }).join('、');
+      var acts = (n.actions || []).map(function (a) {
+        return '<span class="act-tag' + (a.auto ? ' auto' : '') + '" title="' + esc(a.detail || '') + '">' +
+          (a.auto ? '⚙ ' : '') + esc(a.action) + '</span>';
+      }).join('');
+      return '<div class="node-item" data-seq="' + esc(n.seq) + '">' +
+        '<div class="node-head"><span class="ntitle">' + esc(n.title) + '</span>' +
+        '<span class="ntype">' + esc(NODE_TYPE_NAMES[n.node_type] || n.node_type) + '</span>' +
+        '<span style="font-size:11px;color:var(--text-faint)">限 ' + esc(n.deadline_min) + ' 分</span></div>' +
+        '<div class="node-body">' +
+        (n.desc ? '<div class="line"><span class="k">说明</span><span class="v">' + esc(n.desc) + '</span></div>' : '') +
+        '<div class="line"><span class="k">责任主体</span><span class="v">' + esc(resp.org || '--') + ' · ' + esc(resp.role || '') +
+        (resp.contact ? '（' + esc(resp.contact) + '）' : '') +
+        ((resp.cooperators || []).length ? ' 协同：' + esc(resp.cooperators.join('、')) : '') + '</span></div>' +
+        (res ? '<div class="line"><span class="k">资源需求</span><span class="v">' + res + '</span></div>' : '') +
+        (acts ? '<div class="line"><span class="k">处置动作</span><span class="v"><span class="acts">' + acts + '</span></span></div>' : '') +
+        (n.exit_condition ? '<div class="line"><span class="k">完成条件</span><span class="v">' + esc(n.exit_condition) + '</span></div>' : '') +
+        '</div></div>';
+    }).join('');
+    $('detailBody').innerHTML =
+      '<div class="detail-head">' +
+      '<div class="dname">' + esc(p.plan_name) + '</div>' +
+      '<div class="dmeta">' + planBadges(p) + '</div>' +
+      '<div class="dobj">' + esc(p.objective || '') + '</div>' +
+      '<div class="dcmd">指挥：' + esc(p.commander || '--') +
+      ' ｜ 作用域：' + esc((p.scope_cabins || []).join('/')) + ' × ' + esc((p.scope_zones || []).join('/')) + '</div>' +
+      '</div>' +
+      (nodes || '<div class="empty-tip">该预案暂无流程节点</div>') +
+      '<div class="detail-foot">最近修订：' + esc(p.updated_at || '--') + (p.version_note ? ' ｜ ' + esc(p.version_note) : '') + '</div>';
+  }
+
+  /* ---------- 实时匹配 ---------- */
+  function renderLive(d) {
+    if (!d) return;
+    var box = $('liveList');
+    var matches = d.matches || [];
+    if (!matches.length) {
+      box.innerHTML = '<div class="empty-tip">' + (d.tunnel_linked ? '暂无待匹配的管廊告警' : '管廊未联动，等待告警接入…') + '</div>';
+      return;
+    }
+    box.innerHTML = matches.map(function (m) {
+      var a = m.alarm || {};
+      var lvCls = a.level === 2 ? 'lv2' : (a.level === 1 ? 'lv1' : '');
+      var head = '<div class="match-alarm">' +
+        '<span class="badge ' + (LEVEL_BADGE[a.level] ? LEVEL_BADGE[a.level][0] : 'lv1') + '">' +
+        (LEVEL_BADGE[a.level] ? LEVEL_BADGE[a.level][1] : '提示') + '</span>' +
+        '<span class="desc">' + esc(a.alarm_desc || a.metric || m.alarm_id) + '</span>' +
+        '<span class="loc">' + esc(a.cabin || '') + (a.zone ? ' · ' + esc(a.zone) : '') + '</span>' +
+        '<span class="time">' + shortTime(m.time) + '</span></div>';
+      if (m.fallback || !m.best) {
+        return '<div class="match-card fallback">' + head +
+          '<div class="fallback-msg">⚠ ' + esc(m.fallback_message || '无候选预案') + '</div></div>';
+      }
+      var b = m.best;
+      var pct = Math.max(0, Math.min(100, b.score));
+      var reasons = (b.reasons || []).slice(0, 4).map(function (r) {
+        return '<span class="reason">' + esc(r) + '</span>';
+      }).join('');
+      var sd = b.score_detail || {};
+      var sdTip = '类别' + (sd.category || 0) + ' + 级别' + (sd.level_fit || 0) + ' + 位置' + (sd.location || 0) +
+        ' + 优先级' + (sd.priority || 0) + ' + 时效' + (sd.recency || 0);
+      return '<div class="match-card ' + lvCls + '">' + head +
+        '<div class="match-best"><span class="arrow">➤</span>' +
+        '<div class="plan"><div class="name">' + esc(b.plan_name) + '</div>' +
+        '<div class="id">' + esc(b.plan_id) + ' ｜ ' + esc(m.category_name || '') + ' ｜ 评分明细 ' + esc(sdTip) + '</div></div>' +
+        '<div class="score-ring" style="--pct:' + pct + '"><span class="num">' + esc(b.score) + '</span><span class="cap">匹配分</span></div></div>' +
+        (reasons ? '<div class="match-reasons">' + reasons + '</div>' : '') +
+        '<div class="match-actions">' +
+        '<button class="btn small" data-act="activate" data-plan="' + esc(b.plan_id) + '" data-alarm="' + esc(m.alarm_id || '') + '">一键激活</button>' +
+        (m.auto_acked ? '<span class="acked-tag">✓ 告警已联动确认</span>' : '') +
+        '</div></div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('[data-act="activate"]'), function (btn) {
+      btn.addEventListener('click', function () {
+        activatePlan(btn.getAttribute('data-plan'), btn.getAttribute('data-alarm'), btn);
+      });
+    });
+  }
+
+  function activatePlan(planId, alarmId, btn) {
+    if (btn) btn.disabled = true;
+    var body = { plan_id: planId, trigger_label: alarmId ? ('告警联动 ' + alarmId) : '大屏手动激活' };
+    if (alarmId) body.alarm_id = alarmId;
+    fetchJSON('/plan/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function () {
+      tickActivations();
+    }).catch(function (e) {
+      alert('激活失败：' + e.message);
+    }).then(function () {
+      if (btn) btn.disabled = false;
+    });
+  }
+
+  /* ---------- 处置实例 ---------- */
+  function renderActivations(d) {
+    if (!d) return;
+    var list = d.activations || [];
+    setText('actCount', '运行 ' + list.filter(function (a) { return a.status === 'running'; }).length +
+      ' ｜ 完结 ' + list.filter(function (a) { return a.status === 'finished'; }).length);
+    var box = $('actList');
+    if (!list.length) {
+      box.innerHTML = '<div class="empty-tip">暂无激活实例</div>';
+      return;
+    }
+    box.innerHTML = list.slice(0, 20).map(function (a) {
+      var doneCount = a.nodes.filter(function (n) { return n.status === 'done' || n.status === 'skipped'; }).length;
+      var nextIdx = -1;
+      for (var i = 0; i < a.nodes.length; i++) {
+        if (a.nodes[i].status === 'pending') { nextIdx = i; break; }
+      }
+      var steps = a.nodes.map(function (n, i) {
+        var cls = n.status === 'done' ? 'done' : (i === nextIdx && a.status === 'running' ? 'next' : '');
+        var mark = n.status === 'done' ? '✓ ' : '';
+        return '<div class="step ' + cls + '" title="' + esc(n.title) + '">' + mark + esc(n.title) + '</div>';
+      }).join('');
+      var foot = '';
+      if (a.status === 'running') {
+        foot = '<div class="act-foot">' + esc(a.trigger || '') +
+          (nextIdx >= 0
+            ? '<button class="btn small" data-act="next" data-id="' + esc(a.activation_id) + '" data-node="' + esc(a.nodes[nextIdx].node_id) + '">推进下一节点</button>'
+            : '<button class="btn small" data-act="finish" data-id="' + esc(a.activation_id) + '">完结处置</button>') +
+          '<span class="prog">' + doneCount + '/' + a.nodes.length + '</span></div>';
+      } else {
+        foot = '<div class="act-foot">' + esc(a.trigger || '') +
+          '<span class="prog">完结于 ' + shortTime(a.finished_at) + '</span></div>';
+      }
+      return '<div class="act-card">' +
+        '<div class="act-head"><span class="badge st-' + esc(a.status) + '">' + (a.status === 'running' ? '处置中' : '已完结') + '</span>' +
+        '<span class="name">' + esc(a.plan_name) + '</span>' +
+        '<span class="trig">' + esc(a.activation_id) + '</span></div>' +
+        '<div class="steps">' + steps + '</div>' + foot + '</div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('[data-act="next"]'), function (btn) {
+      btn.addEventListener('click', function () {
+        postEmpty('/plan/activations/' + btn.getAttribute('data-id') + '/nodes/' + btn.getAttribute('data-node') + '/done', btn);
+      });
+    });
+    Array.prototype.forEach.call(box.querySelectorAll('[data-act="finish"]'), function (btn) {
+      btn.addEventListener('click', function () {
+        postEmpty('/plan/activations/' + btn.getAttribute('data-id') + '/finish', btn);
+      });
+    });
+  }
+
+  function postEmpty(url, btn) {
+    if (btn) btn.disabled = true;
+    fetchJSON(url, { method: 'POST' })
+      .then(function () { tickActivations(); })
+      .catch(function (e) { alert('操作失败：' + e.message); })
+      .then(function () { if (btn) btn.disabled = false; });
+  }
+
+  /* ---------- 轮询装配 ---------- */
+  function tickOverview() { return fetchJSON('/plan/overview').then(renderOverview); }
+  function tickPlans() {
+    return fetchJSON('/plan/categories').then(function (d) {
+      var map = {};
+      (d.categories || []).forEach(function (c) { map[c.code] = c; });
+      state.categories = map;
+      renderCategoryChart(d.categories || []);
+      return fetchJSON('/plan/plans');
+    }).then(renderPlanList);
+  }
+  function tickLive() { return fetchJSON('/plan/match/live?limit=20').then(renderLive); }
+  function tickActivations() { return fetchJSON('/plan/activations').then(renderActivations); }
+
+  /* ---------- 时钟 ---------- */
+  function tickClock() {
+    var d = new Date();
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+    $('clock').textContent = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' +
+      pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+
+  window.addEventListener('resize', function () {
+    Object.keys(state.charts).forEach(function (k) { if (state.charts[k]) state.charts[k].resize(); });
+  });
+
+  tickClock(); setInterval(tickClock, 1000);
+  tickOverview(); tickPlans(); tickLive(); tickActivations();
+  poller('live', 5000, tickLive);
+  poller('overview', 10000, tickOverview);
+  poller('act', 10000, tickActivations);
+  poller('plans', 30000, tickPlans);
+})();
+</script>
+</body>
+</html>
