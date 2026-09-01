@@ -55,6 +55,13 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 output_dir = os.path.join(project_root, "output")
 app.mount("/output", StaticFiles(directory=output_dir), name="output")
 
+# 注册数据治理与中台服务子模块路由
+try:
+    from data_governance import router as gov_router
+except ImportError:
+    from src.python.data_governance import router as gov_router
+app.include_router(gov_router)
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================

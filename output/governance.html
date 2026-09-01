@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据治理与中台服务 - 可视化大屏</title>
+    <script src="echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0f1e;
+            color: #e2e8f0;
+            font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+            overflow: hidden;
+        }
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: 70px 1fr 1fr 50px;
+            gap: 12px;
+            padding: 12px;
+            height: 100vh;
+        }
+        .header {
+            grid-column: 1 / -1;
+            background: linear-gradient(90deg, rgba(15,23,42,0.95) 0%, rgba(6,182,212,0.3) 50%, rgba(15,23,42,0.95) 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            border: 1px solid rgba(6,182,212,0.3);
+        }
+        .header h1 {
+            font-size: 26px;
+            background: linear-gradient(90deg, #06b6d4, #22d3ee, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 4px;
+        }
+        .header .time {
+            position: absolute;
+            left: 24px;
+            font-size: 13px;
+            color: #64748b;
+        }
+        .header .status-badge {
+            position: absolute;
+            right: 24px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #22c55e;
+        }
+        .header .status-badge::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: #22c55e;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .panel {
+            background: rgba(15, 23, 42, 0.85);
+            border-radius: 10px;
+            padding: 14px;
+            border: 1px solid rgba(6, 182, 212, 0.2);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+        }
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #06b6d4;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(6, 182, 212, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .panel-title::before {
+            content: '';
+            width: 3px;
+            height: 14px;
+            background: #06b6d4;
+            border-radius: 2px;
+        }
+        .chart-container {
+            flex: 1;
+            min-height: 0;
+        }
+        .master-data { grid-column: 1/5; grid-row: 2/3; }
+        .quality-score { grid-column: 5/9; grid-row: 2/3; }
+        .api-monitor { grid-column: 9/13; grid-row: 2/3; }
+        .quality-detail { grid-column: 1/5; grid-row: 3/4; }
+        .spatial-analysis { grid-column: 5/9; grid-row: 3/4; }
+        .data-standards { grid-column: 9/13; grid-row: 3/4; }
+        .footer {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            font-size: 12px;
+            color: #475569;
+        }
+        .kpi-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .kpi-card {
+            flex: 1;
+            background: linear-gradient(135deg, rgba(6,182,212,0.15) 0%, rgba(6,182,212,0.05) 100%);
+            border: 1px solid rgba(6,182,212,0.2);
+            border-radius: 8px;
+            padding: 10px 8px;
+            text-align: center;
+        }
+        .kpi-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #22d3ee;
+        }
+        .kpi-label {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .master-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .master-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            background: rgba(6, 182, 212, 0.08);
+            border-radius: 6px;
+            border: 1px solid rgba(6, 182, 212, 0.15);
+        }
+        .master-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+        .master-info { flex: 1; }
+        .master-name { font-size: 13px; color: #e2e8f0; }
+        .master-count { font-size: 11px; color: #64748b; }
+        .master-bar {
+            width: 60px;
+            height: 4px;
+            background: rgba(6, 182, 212, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .master-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #06b6d4, #22d3ee);
+            border-radius: 2px;
+        }
+        .quality-rules {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .quality-rule {
+            padding: 8px 10px;
+            background: rgba(6, 182, 212, 0.06);
+            border-radius: 6px;
+            border: 1px solid rgba(6, 182, 212, 0.12);
+        }
+        .quality-rule-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        .quality-rule-name { font-size: 12px; color: #94a3b8; }
+        .quality-rule-score { font-size: 14px; font-weight: bold; }
+        .quality-rule-score.pass { color: #22c55e; }
+        .quality-rule-score.warn { color: #f59e0b; }
+        .quality-rule-score.fail { color: #ef4444; }
+        .quality-bar {
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .quality-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.5s ease;
+        }
+        .api-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .api-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: rgba(6, 182, 212, 0.06);
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .api-name { flex: 1; color: #94a3b8; }
+        .api-calls { color: #22d3ee; font-weight: 600; }
+        .api-latency { color: #64748b; font-size: 11px; }
+        .standard-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1;
+        }
+        .standard-item {
+            padding: 10px;
+            background: rgba(6, 182, 212, 0.06);
+            border-radius: 6px;
+            border: 1px solid rgba(6, 182, 212, 0.12);
+        }
+        .standard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        .standard-name { font-size: 13px; color: #e2e8f0; }
+        .standard-compliance { font-size: 12px; font-weight: 600; }
+        .standard-detail { font-size: 11px; color: #64748b; }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <span class="time" id="currentTime">--</span>
+            <h1>数据治理与中台服务管控平台</h1>
+            <span class="status-badge">系统运行中</span>
+        </div>
+
+        <div class="panel master-data">
+            <div class="panel-title">五大主数据概览</div>
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-value" id="totalMaster">--</div>
+                    <div class="kpi-label">主数据总量</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="qualityScore">--</div>
+                    <div class="kpi-label">质量评分</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="apiCalls">--</div>
+                    <div class="kpi-label">API日调用</div>
+                </div>
+            </div>
+            <div class="master-list" id="masterList"></div>
+        </div>
+
+        <div class="panel quality-score">
+            <div class="panel-title">数据质量趋势</div>
+            <div class="chart-container" id="qualityTrendChart"></div>
+        </div>
+
+        <div class="panel api-monitor">
+            <div class="panel-title">API调用监控</div>
+            <div class="chart-container" id="apiChart"></div>
+        </div>
+
+        <div class="panel quality-detail">
+            <div class="panel-title">质量规则校验</div>
+            <div class="quality-rules" id="qualityRules"></div>
+        </div>
+
+        <div class="panel spatial-analysis">
+            <div class="panel-title">时空分析引擎</div>
+            <div class="chart-container" id="spatialChart"></div>
+        </div>
+
+        <div class="panel data-standards">
+            <div class="panel-title">数据标准合规</div>
+            <div class="standard-list" id="standardList"></div>
+        </div>
+
+        <div class="footer">
+            <span>数据治理与中台服务子模块 v1.0</span>
+            <span>|</span>
+            <span>五大主数据统一建模</span>
+            <span>|</span>
+            <span>质量评分: <span id="footerQuality">--</span></span>
+            <span>|</span>
+            <span>API服务: <span id="footerApis">--</span> 个</span>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let qualityTrendChart, apiChart, spatialChart;
+
+        function initCharts() {
+            qualityTrendChart = echarts.init(document.getElementById('qualityTrendChart'));
+            apiChart = echarts.init(document.getElementById('apiChart'));
+            spatialChart = echarts.init(document.getElementById('spatialChart'));
+        }
+
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('currentTime').textContent =
+                now.toLocaleString('zh-CN', { hour12: false });
+        }
+
+        async function fetchOverview() {
+            try {
+                const res = await fetch(API_BASE + '/governance/overview');
+                const data = await res.json();
+                document.getElementById('totalMaster').textContent = data.total_master_data;
+                document.getElementById('qualityScore').textContent = (data.avg_quality_score * 100).toFixed(1);
+                document.getElementById('apiCalls').textContent = formatNumber(data.api_total_calls_24h);
+                document.getElementById('footerQuality').textContent = (data.avg_quality_score * 100).toFixed(1) + '%';
+                document.getElementById('footerApis').textContent = data.api_services_count;
+            } catch (e) {
+                console.error('Failed to fetch overview:', e);
+            }
+        }
+
+        async function fetchMasterStats() {
+            try {
+                const res = await fetch(API_BASE + '/governance/master/stats');
+                const data = await res.json();
+                const icons = { pipeline: '🔧', equipment: '⚙️', personnel: '👤', organization: '🏢', geo: '🗺️' };
+                const colors = { pipeline: '#06b6d4', equipment: '#8b5cf6', personnel: '#22c55e', organization: '#f59e0b', geo: '#ec4899' };
+                const list = document.getElementById('masterList');
+                list.innerHTML = data.master_data.map(m => `
+                    <div class="master-item">
+                        <div class="master-icon" style="background:${colors[m.icon] || '#06b6d4'}22; color:${colors[m.icon] || '#06b6d4'}">${icons[m.icon] || '📊'}</div>
+                        <div class="master-info">
+                            <div class="master-name">${m.name}</div>
+                            <div class="master-count">${m.count} 条 · ${m.subtypes} 类</div>
+                        </div>
+                        <div class="master-bar">
+                            <div class="master-bar-fill" style="width:${Math.min(100, m.count / 1.5)}%"></div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch master stats:', e);
+            }
+        }
+
+        async function fetchQualityReport() {
+            try {
+                const res = await fetch(API_BASE + '/governance/quality/report');
+                const data = await res.json();
+                const rules = document.getElementById('qualityRules');
+                rules.innerHTML = data.rules.map(r => {
+                    const pct = (r.score * 100).toFixed(1);
+                    const cls = r.passed ? 'pass' : (r.score >= 0.9 ? 'warn' : 'fail');
+                    const barColor = r.passed ? '#22c55e' : (r.score >= 0.9 ? '#f59e0b' : '#ef4444');
+                    return `
+                        <div class="quality-rule">
+                            <div class="quality-rule-header">
+                                <span class="quality-rule-name">${r.rule_name}</span>
+                                <span class="quality-rule-score ${cls}">${pct}%</span>
+                            </div>
+                            <div class="quality-bar">
+                                <div class="quality-bar-fill" style="width:${pct}%; background:${barColor}"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                updateQualityTrend(data.trend_7d);
+            } catch (e) {
+                console.error('Failed to fetch quality report:', e);
+            }
+        }
+
+        async function fetchApiStats() {
+            try {
+                const res = await fetch(API_BASE + '/governance/api/stats');
+                const data = await res.json();
+                updateApiChart(data.domain_stats, data.top_apis);
+            } catch (e) {
+                console.error('Failed to fetch API stats:', e);
+            }
+        }
+
+        async function fetchSpatialData() {
+            try {
+                const res = await fetch(API_BASE + '/governance/spatial/topology');
+                const data = await res.json();
+                updateSpatialChart(data);
+            } catch (e) {
+                console.error('Failed to fetch spatial data:', e);
+            }
+        }
+
+        async function fetchCompliance() {
+            try {
+                const res = await fetch(API_BASE + '/governance/compliance');
+                const data = await res.json();
+                const list = document.getElementById('standardList');
+                list.innerHTML = data.checks.map(c => {
+                    const pct = (c.compliance_rate * 100).toFixed(1);
+                    const color = c.passed ? '#22c55e' : '#f59e0b';
+                    return `
+                        <div class="standard-item">
+                            <div class="standard-header">
+                                <span class="standard-name">${c.standard_name}</span>
+                                <span class="standard-compliance" style="color:${color}">${pct}%</span>
+                            </div>
+                            <div class="standard-detail">样本 ${formatNumber(c.sample_count)} · 违规 ${c.violations} 条</div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error('Failed to fetch compliance:', e);
+            }
+        }
+
+        function updateQualityTrend(trend) {
+            if (!trend || !qualityTrendChart) return;
+            qualityTrendChart.setOption({
+                tooltip: { trigger: 'axis', backgroundColor: 'rgba(15,23,42,0.9)', borderColor: '#06b6d4', textStyle: { color: '#e2e8f0' } },
+                grid: { top: 20, right: 20, bottom: 30, left: 50 },
+                xAxis: { type: 'category', data: trend.map(t => t.date), axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#64748b' } },
+                yAxis: { type: 'value', min: 0.85, max: 1, axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#64748b', formatter: v => (v * 100).toFixed(0) + '%' }, splitLine: { lineStyle: { color: '#1e293b' } } },
+                series: [{
+                    type: 'line',
+                    data: trend.map(t => t.score),
+                    smooth: true,
+                    lineStyle: { color: '#06b6d4', width: 2 },
+                    areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(6,182,212,0.3)' }, { offset: 1, color: 'rgba(6,182,212,0.02)' }] } },
+                    itemStyle: { color: '#22d3ee' },
+                }]
+            });
+        }
+
+        function updateApiChart(domainStats, topApis) {
+            if (!apiChart) return;
+            const domainColors = { governance: '#06b6d4', tunnel: '#22c55e', plan: '#f59e0b', device: '#8b5cf6' };
+            apiChart.setOption({
+                tooltip: { trigger: 'item', backgroundColor: 'rgba(15,23,42,0.9)', borderColor: '#06b6d4', textStyle: { color: '#e2e8f0' } },
+                legend: { bottom: 0, textStyle: { color: '#64748b', fontSize: 11 } },
+                series: [{
+                    type: 'pie',
+                    radius: ['40%', '65%'],
+                    center: ['50%', '45%'],
+                    data: domainStats.map(d => ({
+                        name: d.domain,
+                        value: d.calls_24h,
+                        itemStyle: { color: domainColors[d.domain] || '#64748b' }
+                    })),
+                    label: { color: '#94a3b8', fontSize: 11 },
+                    emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } }
+                }]
+            });
+        }
+
+        function updateSpatialChart(topoData) {
+            if (!spatialChart) return;
+            const zones = ['Z01', 'Z02', 'Z03'];
+            const pipelineCounts = zones.map(z => Math.floor(Math.random() * 5) + 2);
+            const equipmentCounts = zones.map(z => Math.floor(Math.random() * 8) + 3);
+            spatialChart.setOption({
+                tooltip: { trigger: 'axis', backgroundColor: 'rgba(15,23,42,0.9)', borderColor: '#06b6d4', textStyle: { color: '#e2e8f0' } },
+                legend: { bottom: 0, textStyle: { color: '#64748b', fontSize: 11 } },
+                grid: { top: 20, right: 20, bottom: 40, left: 50 },
+                xAxis: { type: 'category', data: zones, axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#64748b' } },
+                yAxis: { type: 'value', axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: '#1e293b' } } },
+                series: [
+                    { name: '管网段', type: 'bar', data: pipelineCounts, itemStyle: { color: '#06b6d4', borderRadius: [4,4,0,0] }, barWidth: 20 },
+                    { name: '设备数', type: 'bar', data: equipmentCounts, itemStyle: { color: '#8b5cf6', borderRadius: [4,4,0,0] }, barWidth: 20 }
+                ]
+            });
+        }
+
+        function formatNumber(num) {
+            if (num >= 10000) return (num / 10000).toFixed(1) + '万';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+            return num.toString();
+        }
+
+        async function refreshAll() {
+            updateTime();
+            await Promise.all([
+                fetchOverview(),
+                fetchMasterStats(),
+                fetchQualityReport(),
+                fetchApiStats(),
+                fetchSpatialData(),
+                fetchCompliance()
+            ]);
+        }
+
+        window.addEventListener('resize', () => {
+            qualityTrendChart && qualityTrendChart.resize();
+            apiChart && apiChart.resize();
+            spatialChart && spatialChart.resize();
+        });
+
+        initCharts();
+        refreshAll();
+        setInterval(refreshAll, 30000);
+        setInterval(updateTime, 1000);
+    </script>
+</body>
+</html>
