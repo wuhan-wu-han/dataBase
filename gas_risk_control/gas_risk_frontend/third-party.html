@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第三方破坏预警 - 燃气管网安全风控系统</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/lib/echarts.min.js"></script>
+</head>
+<body>
+<div class="layout">
+  <aside id="sidebar"></aside>
+  <main>
+    <div class="page-header">
+      <h1>4. 第三方破坏预警</h1>
+      <p>周边施工机械振动、违规开挖等扰动的识别与安全距离越界告警。分区规则：
+        &lt;5m 管道保护范围（禁止作业，严重告警）｜5~20m 控制作业区（需审批旁站）｜20~50m 安全控制区（关注）。</p>
+    </div>
+
+    <div class="grid cols-3">
+      <div class="stat-card"><div class="label">严重告警</div><div class="value red" id="st-severe">-</div></div>
+      <div class="stat-card"><div class="label">预警</div><div class="value yellow" id="st-warning">-</div></div>
+      <div class="stat-card"><div class="label">关注</div><div class="value accent" id="st-notice">-</div></div>
+    </div>
+
+    <div class="card mt">
+      <h3>事件上报</h3>
+      <div class="form">
+        <label>事件类型
+          <select id="tp-type">
+            <option>机械施工振动</option><option>违规开挖</option>
+            <option>重型车辆通行</option><option>钻探作业</option><option>爆破作业</option>
+          </select>
+        </label>
+        <label>桩号 km <input type="number" id="tp-km" value="18.5" step="0.1" min="0" max="50"></label>
+        <label>距管道距离 m <input type="number" id="tp-dist" value="8" step="0.5" min="0"></label>
+        <label>扰动强度 1~10 <input type="number" id="tp-intensity" value="6" step="0.5" min="1" max="10"></label>
+        <label>描述 <input type="text" id="tp-desc" value="挖掘机在管线附近作业" style="min-width:220px"></label>
+        <button class="btn" id="btn-report">上报事件</button>
+        <button class="btn ghost" id="btn-simulate">随机模拟事件</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>扰动分布图 <small>横轴桩号，纵轴距管道水平距离；色带为保护分区</small></h3>
+      <div id="chart-events" class="chart tall"></div>
+    </div>
+
+    <div class="card">
+      <h3>告警列表 <small>按风险评分排序</small></h3>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>时间</th><th>类型</th><th>桩号 km</th><th>距离 m</th><th>强度</th>
+            <th>评分</th><th>级别</th><th>判定依据 / 处置建议</th>
+          </tr></thead>
+          <tbody id="warn-body"><tr><td colspan="8" class="muted">加载中…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/common.js"></script>
+<script src="js/thirdparty.js"></script>
+</body>
+</html>

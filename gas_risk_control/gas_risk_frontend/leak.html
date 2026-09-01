@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>微泄漏精准定位 - 燃气管网安全风控系统</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/lib/echarts.min.js"></script>
+</head>
+<body>
+<div class="layout">
+  <aside id="sidebar"></aside>
+  <main>
+    <div class="page-header">
+      <h1>2. 微泄漏精准定位</h1>
+      <p>浓度扩散模型：以高斯分布拟合沿线浓度场，反演泄漏点桩号与置信度；
+        压力波时差法：x = (L + v·Δt) / 2。两种方法互补，微泄漏用浓度法、突发泄漏用压力波法。</p>
+    </div>
+
+    <div class="card">
+      <h3>浓度扩散模型定位</h3>
+      <div class="form">
+        <button class="btn" id="btn-demo">一键演示（随机泄漏场景）</button>
+        <button class="btn ghost" id="btn-realtime">使用实时监测数据定位</button>
+        <span class="muted" id="conc-hint">演示将生成随机泄漏点，对比定位结果与真实位置</span>
+      </div>
+      <div class="result-box" id="conc-result"></div>
+      <div id="chart-conc" class="chart tall mt"></div>
+    </div>
+
+    <div class="card">
+      <h3>压力波时差法定位</h3>
+      <div class="form">
+        <label>管线长度 km <input type="number" id="pw-length" value="50" step="1"></label>
+        <label>波速 m/s <input type="number" id="pw-speed" value="350" step="10"></label>
+        <label>上游站检测时刻 ms <input type="number" id="pw-t1" value="65700" step="1"></label>
+        <label>下游站检测时刻 ms <input type="number" id="pw-t2" value="60000" step="1"></label>
+        <label>时钟误差 ms <input type="number" id="pw-err" value="5" step="1"></label>
+        <button class="btn" id="btn-pw">计算泄漏位置</button>
+        <button class="btn ghost" id="btn-pw-demo">生成演示数据</button>
+      </div>
+      <div class="result-box" id="pw-result"></div>
+      <div id="chart-pw" class="chart short mt"></div>
+    </div>
+
+    <div class="card">
+      <h3>定位历史记录</h3>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>时间</th><th>方法</th><th>定位桩号 km</th><th>置信度</th></tr></thead>
+          <tbody id="records-body"><tr><td colspan="4" class="muted">暂无记录</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/common.js"></script>
+<script src="js/leak.js"></script>
+</body>
+</html>
