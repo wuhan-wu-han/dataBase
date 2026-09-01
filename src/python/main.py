@@ -69,6 +69,13 @@ except ImportError:
     from src.python.hazmat_transport import router as hazmat_router
 app.include_router(hazmat_router)
 
+# 注册工单全流程管理子模块路由
+try:
+    from workorder import router as workorder_router
+except ImportError:
+    from src.python.workorder import router as workorder_router
+app.include_router(workorder_router)
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================

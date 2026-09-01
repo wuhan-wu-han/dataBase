@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工单全流程管理 - 可视化大屏</title>
+    <script src="echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0f1e;
+            color: #e2e8f0;
+            font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+            overflow: hidden;
+        }
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: 70px 1fr 1fr 50px;
+            gap: 12px;
+            padding: 12px;
+            height: 100vh;
+        }
+        .header {
+            grid-column: 1 / -1;
+            background: linear-gradient(90deg, rgba(15,23,42,0.95) 0%, rgba(99,102,241,0.3) 50%, rgba(15,23,42,0.95) 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            border: 1px solid rgba(99,102,241,0.3);
+        }
+        .header h1 {
+            font-size: 26px;
+            background: linear-gradient(90deg, #6366f1, #818cf8, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 4px;
+        }
+        .header .time {
+            position: absolute;
+            left: 24px;
+            font-size: 13px;
+            color: #64748b;
+        }
+        .header .status-badge {
+            position: absolute;
+            right: 24px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #22c55e;
+        }
+        .header .status-badge::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: #22c55e;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .panel {
+            background: rgba(15, 23, 42, 0.85);
+            border-radius: 10px;
+            padding: 14px;
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+        }
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #818cf8;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .panel-title::before {
+            content: '';
+            width: 3px;
+            height: 14px;
+            background: #6366f1;
+            border-radius: 2px;
+        }
+        .chart-container {
+            flex: 1;
+            min-height: 0;
+        }
+        .channel-panel { grid-column: 1/5; grid-row: 2/3; }
+        .dispatch-panel { grid-column: 5/9; grid-row: 2/3; }
+        .sla-panel { grid-column: 9/13; grid-row: 2/3; }
+        .order-stats-panel { grid-column: 1/5; grid-row: 3/4; }
+        .process-panel { grid-column: 5/9; grid-row: 3/4; }
+        .workload-panel { grid-column: 9/13; grid-row: 3/4; }
+        .footer {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            font-size: 12px;
+            color: #475569;
+        }
+        .kpi-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .kpi-card {
+            flex: 1;
+            background: linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(99,102,241,0.05) 100%);
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 8px;
+            padding: 10px 8px;
+            text-align: center;
+        }
+        .kpi-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #818cf8;
+        }
+        .kpi-label {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .channel-chart-wrap { flex: 1; min-height: 0; }
+        .candidate-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .candidate-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            background: rgba(99, 102, 241, 0.08);
+            border-radius: 6px;
+            border: 1px solid rgba(99, 102, 241, 0.15);
+        }
+        .candidate-rank {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+        }
+        .candidate-rank.top { background: rgba(34, 197, 94, 0.25); color: #22c55e; }
+        .candidate-info { flex: 1; }
+        .candidate-name { font-size: 13px; color: #e2e8f0; }
+        .candidate-detail { font-size: 11px; color: #64748b; }
+        .candidate-score { font-size: 16px; font-weight: bold; color: #818cf8; }
+        .sla-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .sla-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: rgba(99, 102, 241, 0.06);
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .sla-tag {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .sla-normal { background: rgba(34,197,94,0.2); color: #22c55e; }
+        .sla-warning { background: rgba(245,158,11,0.2); color: #f59e0b; }
+        .sla-overdue { background: rgba(239,68,68,0.2); color: #ef4444; }
+        .sla-escalated { background: rgba(168,85,247,0.2); color: #a855f7; }
+        .sla-order-id { flex: 1; color: #94a3b8; }
+        .sla-time { color: #64748b; font-size: 11px; }
+        .process-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .process-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 10px;
+            background: rgba(99, 102, 241, 0.06);
+            border-radius: 6px;
+            border: 1px solid rgba(99, 102, 241, 0.12);
+        }
+        .process-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #6366f1;
+            flex-shrink: 0;
+        }
+        .process-info { flex: 1; }
+        .process-title { font-size: 13px; color: #e2e8f0; }
+        .process-step { font-size: 11px; color: #64748b; }
+        .process-status {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+            white-space: nowrap;
+        }
+        .workload-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            overflow: hidden;
+        }
+        .workload-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            background: rgba(99, 102, 241, 0.06);
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .workload-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        .dot-idle { background: #22c55e; }
+        .dot-busy { background: #f59e0b; }
+        .dot-off { background: #475569; }
+        .workload-name { flex: 1; color: #94a3b8; }
+        .workload-count { color: #818cf8; font-weight: 600; }
+        .workload-rating { color: #64748b; font-size: 11px; }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <span class="time" id="currentTime">--</span>
+            <h1>工单全流程管理管控平台</h1>
+            <span class="status-badge">系统运行中</span>
+        </div>
+
+        <div class="panel channel-panel">
+            <div class="panel-title">多渠道工单接入</div>
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-value" id="totalOrders">--</div>
+                    <div class="kpi-label">工单总量</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="activeOrders">--</div>
+                    <div class="kpi-label">处置中</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="avgResponse">--</div>
+                    <div class="kpi-label">平均响应(分)</div>
+                </div>
+            </div>
+            <div class="channel-chart-wrap" id="channelChart"></div>
+        </div>
+
+        <div class="panel dispatch-panel">
+            <div class="panel-title">智能派单推荐</div>
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-value" id="pendingDispatch">--</div>
+                    <div class="kpi-label">待派单</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="staffIdle">--</div>
+                    <div class="kpi-label">空闲人员</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="staffTotal">--</div>
+                    <div class="kpi-label">运维人员</div>
+                </div>
+            </div>
+            <div class="candidate-list" id="candidateList"></div>
+        </div>
+
+        <div class="panel sla-panel">
+            <div class="panel-title">时效管控（SLA）</div>
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-value" id="slaWarning">--</div>
+                    <div class="kpi-label">临期预警</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="slaOverdue">--</div>
+                    <div class="kpi-label">已超时</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="slaEscalated">--</div>
+                    <div class="kpi-label">已升级</div>
+                </div>
+            </div>
+            <div class="sla-list" id="slaList"></div>
+        </div>
+
+        <div class="panel order-stats-panel">
+            <div class="panel-title">工单趋势分析</div>
+            <div class="chart-container" id="trendChart"></div>
+        </div>
+
+        <div class="panel process-panel">
+            <div class="panel-title">过程跟踪（处置中）</div>
+            <div class="process-list" id="processList"></div>
+        </div>
+
+        <div class="panel workload-panel">
+            <div class="panel-title">运维人员负载</div>
+            <div class="kpi-row">
+                <div class="kpi-card">
+                    <div class="kpi-value" id="avgRating">--</div>
+                    <div class="kpi-label">平均评价</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value" id="completedOrders">--</div>
+                    <div class="kpi-label">已完成</div>
+                </div>
+            </div>
+            <div class="workload-list" id="workloadList"></div>
+        </div>
+
+        <div class="footer">
+            <span>工单全流程管理子模块 v1.0</span>
+            <span>|</span>
+            <span>接入渠道: <span id="footerChannels">4</span> 个</span>
+            <span>|</span>
+            <span>超时工单: <span id="footerOverdue">--</span> 个</span>
+            <span>|</span>
+            <span>运维人员: <span id="footerStaff">--</span> 人</span>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let channelChart, trendChart;
+
+        function initCharts() {
+            channelChart = echarts.init(document.getElementById('channelChart'));
+            trendChart = echarts.init(document.getElementById('trendChart'));
+        }
+
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('currentTime').textContent =
+                now.toLocaleString('zh-CN', { hour12: false });
+        }
+
+        async function fetchOverview() {
+            try {
+                const res = await fetch(API_BASE + '/workorder/overview');
+                const data = await res.json();
+                document.getElementById('totalOrders').textContent = data.total_orders;
+                document.getElementById('activeOrders').textContent = data.active_orders;
+                document.getElementById('avgResponse').textContent = data.avg_response_min;
+                document.getElementById('pendingDispatch').textContent = data.pending_dispatch;
+                document.getElementById('staffIdle').textContent = data.staff_idle;
+                document.getElementById('staffTotal').textContent = data.staff_total;
+                document.getElementById('completedOrders').textContent = data.completed_orders;
+                document.getElementById('avgRating').textContent = data.avg_rating;
+                document.getElementById('footerOverdue').textContent = data.overdue_orders;
+                document.getElementById('footerStaff').textContent = data.staff_total;
+                updateChannelChart(data.channel_stats);
+            } catch (e) {
+                console.error('Failed to fetch overview:', e);
+            }
+        }
+
+        function updateChannelChart(channelStats) {
+            if (!channelChart) return;
+            const colors = { alarm: '#ef4444', patrol: '#22c55e', user: '#6366f1', government: '#f59e0b' };
+            channelChart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: 'rgba(15,23,42,0.9)', borderColor: '#6366f1', textStyle: { color: '#e2e8f0' } },
+                grid: { top: 10, right: 20, bottom: 25, left: 75 },
+                xAxis: { type: 'value', axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: '#1e293b' } } },
+                yAxis: { type: 'category', data: channelStats.map(c => c.channel_name), axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#94a3b8' } },
+                series: [{
+                    type: 'bar',
+                    data: channelStats.map(c => ({ value: c.count, itemStyle: { color: colors[c.channel] || '#6366f1' } })),
+                    barWidth: '55%',
+                    label: { show: true, position: 'right', color: '#818cf8', fontSize: 11 },
+                }]
+            });
+        }
+
+        async function fetchDispatchRecommend() {
+            try {
+                const res = await fetch(API_BASE + '/workorder/dispatch/recommend?required_skill=' +
+                    encodeURIComponent('电气维修') + '&location=' + encodeURIComponent('综合管廊A段'));
+                const data = await res.json();
+                const list = document.getElementById('candidateList');
+                list.innerHTML = data.candidates.map((c, i) => `
+                    <div class="candidate-item">
+                        <div class="candidate-rank ${i === 0 ? 'top' : ''}">${i + 1}</div>
+                        <div class="candidate-info">
+                            <div class="candidate-name">${c.name} · ${c.status_name}</div>
+                            <div class="candidate-detail">${c.skill_match ? '✓技能匹配' : '✗技能不符'} · 距离 ${c.distance_m}m · 评分 ${c.avg_rating}</div>
+                        </div>
+                        <div class="candidate-score">${c.total_score}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch dispatch:', e);
+            }
+        }
+
+        async function fetchSlaMonitor() {
+            try {
+                const res = await fetch(API_BASE + '/workorder/sla/monitor');
+                const data = await res.json();
+                document.getElementById('slaWarning').textContent = data.warning_count;
+                document.getElementById('slaOverdue').textContent = data.overdue_count;
+                document.getElementById('slaEscalated').textContent = data.escalated_count;
+                const list = document.getElementById('slaList');
+                list.innerHTML = data.items.slice(0, 6).map(it => `
+                    <div class="sla-item">
+                        <span class="sla-tag sla-${it.sla_status}">${it.sla_status_name}</span>
+                        <span class="sla-order-id">${it.order_id} · ${it.priority_name}</span>
+                        <span class="sla-time">${it.elapsed_hours}h / ${it.sla_hours}h</span>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch SLA:', e);
+            }
+        }
+
+        async function fetchOrderStats() {
+            try {
+                const res = await fetch(API_BASE + '/workorder/orders/stats');
+                const data = await res.json();
+                updateTrendChart(data.trend_7d);
+            } catch (e) {
+                console.error('Failed to fetch order stats:', e);
+            }
+        }
+
+        function updateTrendChart(trend) {
+            if (!trendChart) return;
+            trendChart.setOption({
+                tooltip: { trigger: 'axis', backgroundColor: 'rgba(15,23,42,0.9)', borderColor: '#6366f1', textStyle: { color: '#e2e8f0' } },
+                legend: { bottom: 0, textStyle: { color: '#64748b', fontSize: 11 } },
+                grid: { top: 20, right: 20, bottom: 30, left: 45 },
+                xAxis: { type: 'category', data: trend.map(t => t.date), axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#64748b' } },
+                yAxis: { type: 'value', axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#64748b' }, splitLine: { lineStyle: { color: '#1e293b' } } },
+                series: [
+                    { name: '新建', type: 'line', data: trend.map(t => t.created), smooth: true,
+                      lineStyle: { color: '#6366f1', width: 2 }, itemStyle: { color: '#818cf8' },
+                      areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(99,102,241,0.3)' }, { offset: 1, color: 'rgba(99,102,241,0.02)' }] } } },
+                    { name: '完成', type: 'line', data: trend.map(t => t.closed), smooth: true,
+                      lineStyle: { color: '#22c55e', width: 2 }, itemStyle: { color: '#22c55e' } },
+                ]
+            });
+        }
+
+        async function fetchProcessTracking() {
+            try {
+                const res = await fetch(API_BASE + '/workorder/orders?status=onsite');
+                let orders = (await res.json()).orders;
+                if (!orders.length) {
+                    const res2 = await fetch(API_BASE + '/workorder/orders');
+                    orders = (await res2.json()).orders.filter(o => !['verified', 'closed'].includes(o.status));
+                }
+                const list = document.getElementById('processList');
+                list.innerHTML = orders.slice(0, 6).map(o => `
+                    <div class="process-item">
+                        <div class="process-dot"></div>
+                        <div class="process-info">
+                            <div class="process-title">${o.order_id} · ${o.title}</div>
+                            <div class="process-step">处置人: ${o.assignee || '待派单'} · ${o.location}</div>
+                        </div>
+                        <span class="process-status">${{pending:'待派单',assigned:'已派单',accepted:'已接单',onsite:'已到场',resolved:'已处置',escalated:'已升级'}[o.status] || o.status}</span>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch process:', e);
+            }
+        }
+
+        async function fetchWorkload() {
+            try {
+                const res = await fetch(API_BASE + '/workorder/staff/workload');
+                const data = await res.json();
+                const list = document.getElementById('workloadList');
+                list.innerHTML = data.workload.slice(0, 6).map(w => `
+                    <div class="workload-item">
+                        <div class="workload-dot dot-${w.status}"></div>
+                        <span class="workload-name">${w.name}</span>
+                        <span class="workload-count">${w.active_orders} 单在办</span>
+                        <span class="workload-rating">★${w.avg_rating}</span>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to fetch workload:', e);
+            }
+        }
+
+        function refreshAll() {
+            fetchOverview();
+            fetchDispatchRecommend();
+            fetchSlaMonitor();
+            fetchOrderStats();
+            fetchProcessTracking();
+            fetchWorkload();
+        }
+
+        initCharts();
+        updateTime();
+        refreshAll();
+        setInterval(updateTime, 1000);
+        setInterval(refreshAll, 30000);
+    </script>
+</body>
+</html>
