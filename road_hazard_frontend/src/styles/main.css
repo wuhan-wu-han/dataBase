@@ -1,0 +1,73 @@
+:root {
+  --bg-main: #f5f7fa;
+  --bg-card: #ffffff;
+  --border-light: #ebeef5;
+  --text-main: #303133;
+  --text-sub: #909399;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-family: "Helvetica Neue", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+}
+
+/* 顶部标题栏 */
+.app-header {
+  background: linear-gradient(90deg, #1d4e89 0%, #2b6cb0 55%, #3182ce 100%);
+  color: #fff;
+  padding: 14px 28px;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.app-header h1 { margin: 0; font-size: 20px; letter-spacing: 2px; }
+.app-header .sub { font-size: 12px; opacity: .75; }
+
+.page-body { padding: 14px 20px 24px; max-width: 1600px; margin: 0 auto; }
+
+/* 统计卡片 */
+.stat-cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 14px; }
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.stat-card .label { font-size: 12px; color: var(--text-sub); margin-bottom: 6px; }
+.stat-card .value { font-size: 26px; font-weight: 700; color: var(--text-main); line-height: 1.1; }
+.stat-card .value.danger { color: #f56c6c; }
+.stat-card .extra { font-size: 11px; color: var(--text-sub); margin-top: 6px; }
+
+/* 面板 */
+.panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.panel-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #303133; }
+.panel-title::before {
+  content: ""; display: inline-block; width: 4px; height: 13px;
+  background: #409eff; border-radius: 2px; margin-right: 8px; vertical-align: -1px;
+}
+
+.chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.chart-row.three { grid-template-columns: 1fr 1fr 1fr; }
+.chart-box { height: 220px; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; align-items: center; }
+.toolbar .spacer { flex: 1; }
+
+.el-tabs__item { font-size: 14px; }
+
+@media (max-width: 1200px) {
+  .stat-cards { grid-template-columns: repeat(3, 1fr); }
+  .chart-row, .chart-row.three { grid-template-columns: 1fr; }
+}
