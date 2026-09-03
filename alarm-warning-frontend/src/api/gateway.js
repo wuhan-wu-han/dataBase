@@ -7,6 +7,8 @@
  *   /api/gas-risk/**     → 8003  gas_risk_control
  *   /api/gas-asset/**    → 8001  gas_asset_manage
  *   /api/road-hazard/**  → 8002  road_hazard_control
+ *   /api/manhole-cover/** → 8005 manhole_cover_control
+ *   /api/water-supply/** → 8004  water_supply_control
  *
  * StripPrefix=2 剥掉前两段 /api/{服务名}，后端原路径保持不变
  */
@@ -19,11 +21,13 @@ export const GATEWAY_BASE = '/api'
 
 // 各子模块网关前缀
 export const MODULE_PREFIX = {
-  alarm: '/api/alert',          // 主平台预警服务
-  gasRisk: '/api/gas-risk',     // 燃气风控
-  gasAsset: '/api/gas-asset',   // 资产管理
-  roadHazard: '/api/road-hazard', // 道路塌陷
-  platform: '/api/platform'     // Python 综合服务（治理/危化品/管廊/预案/成本/工单）
+  alarm: '/api/alert',             // 主平台预警服务
+  gasRisk: '/api/gas-risk',        // 燃气风控
+  gasAsset: '/api/gas-asset',      // 资产管理
+  roadHazard: '/api/road-hazard',  // 道路塌陷
+  manholeCover: '/api/manhole-cover',  // 市政井盖管控
+  waterSupply: '/api/water-supply',    // 供水管网管控
+  platform: '/api/platform'        // Python 综合服务（治理/危化品/管廊/预案/成本/工单）
 }
 
 /**

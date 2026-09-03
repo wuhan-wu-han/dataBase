@@ -110,6 +110,20 @@ const routes = [
         meta: { title: '工单管理' }
       },
       {
+        // 市政井盖全生命周期管控
+        path: 'manhole-cover',
+        name: 'ManholeCover',
+        component: () => import('@/views/manholeCover/Index.vue'),
+        meta: { title: '井盖管控' }
+      },
+      {
+        // 供水管网精细化管控
+        path: 'water-supply',
+        name: 'WaterSupply',
+        component: () => import('@/views/waterSupply/Index.vue'),
+        meta: { title: '供水管控' }
+      },
+      {
         path: 'users',
         name: 'UserManagement',
         component: () => import('@/views/UserManagement.vue'),

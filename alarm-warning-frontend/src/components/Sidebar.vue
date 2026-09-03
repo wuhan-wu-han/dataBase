@@ -47,7 +47,7 @@ import {
   Odometer, Location, Bell, TrendCharts, DataAnalysis,
   Aim, Box, Grid, MapLocation, AlarmClock,
   OfficeBuilding, Coin, Tickets, User,
-  Fold, Expand
+  Fold, Expand, SetUp, Monitor
 } from '@element-plus/icons-vue'
 
 defineProps({
@@ -78,6 +78,8 @@ const menus = [
   { path: '/asset',              title: '资产管理',     icon: OfficeBuilding },
   { path: '/asset-cost',         title: '资产成本',     icon: Coin },
   { path: '/work-order',         title: '工单管理',     icon: Tickets },
+  { path: '/manhole-cover',      title: '井盖管控',     icon: SetUp },
+  { path: '/water-supply',       title: '供水管控',     icon: Monitor },
   { path: '/users',              title: '用户管理',     icon: User, permission: 'user:manage' }
 ]
 

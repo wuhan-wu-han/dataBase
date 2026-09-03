@@ -17,6 +17,18 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/platform/, '')
       },
+      // 市政井盖管控：直连 8005，去掉 /api/manhole-cover 前缀
+      '/api/manhole-cover': {
+        target: 'http://localhost:8005',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/manhole-cover/, '')
+      },
+      // 供水管网管控：直连 8004，去掉 /api/water-supply 前缀
+      '/api/water-supply': {
+        target: 'http://localhost:8004',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/water-supply/, '')
+      },
       // 其余 /api/**（预警/燃气/道路等）仍走网关 :8080
       '/api': {
         target: 'http://localhost:8080',
