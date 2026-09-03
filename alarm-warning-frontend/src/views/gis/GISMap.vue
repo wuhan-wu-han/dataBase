@@ -263,6 +263,10 @@ let viewportHandler = null
 let resizeFrame = null
 const groups = {}        // key -> L.LayerGroup
 const collections = {}   // key -> GeoJSON.FeatureCollection（全量，筛选在渲染时进行）
+const rendered = {}      // key -> [{ layers, feature, cfg, isTrunk }]，用于按 zoom 精细显隐
+let clusterGroup = null
+let networkNodeGroup = null
+let selectedOverlay = null
 let highlighted = null   // { layer, cfg, props }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +357,21 @@ function createMap() {
   // 缩放控件放右上角，避开左上角图层面板与移动端底部抽屉
   L.control.zoom({ position: 'topright' }).addTo(map)
 
+  // 业务图层使用独立 pane，明确控制覆盖顺序，避免依赖添加先后。
+  const panes = [
+    ['gis-risk-pane', 310],
+    ['gis-pipeline-pane', 410],
+    ['gis-node-pane', 470],
+    ['gis-facility-pane', 510],
+    ['gis-warning-pane', 610],
+    ['gis-critical-pane', 650],
+    ['gis-selected-pane', 700]
+  ]
+  for (const [name, zIndex] of panes) {
+    const pane = map.createPane(name)
+    pane.style.zIndex = String(zIndex)
+  }
+
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors',
     minZoom: 9,
@@ -361,12 +380,21 @@ function createMap() {
 
   for (const cfg of GIS_LAYERS) {
     groups[cfg.key] = L.layerGroup()
+    rendered[cfg.key] = []
   }
 
-  map.on('click', () => { drawerVisible.value = false })
+  clusterGroup = L.layerGroup().addTo(map)
+  networkNodeGroup = L.layerGroup().addTo(map)
+
+  map.on('click', () => {
+    drawerVisible.value = false
+    clearHighlight()
+  })
   map.on('zoomend', () => {
     applyZoomVisibility()
     applyLabels()
+    renderClusters()
+    renderNetworkNodes()
   })
 }
 
@@ -376,13 +404,17 @@ async function loadBoundary() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const geojson = await response.json()
     const layer = L.geoJSON(geojson, {
-      style: {
-        color: '#0071E3',
-        weight: 2,
-        opacity: 0.5,
-        fillColor: '#0071E3',
-        fillOpacity: 0.04,
-        interactive: false
+      pane: 'gis-risk-pane',
+      style: getRiskAreaStyle(false),
+      onEachFeature: (_feature, polygon) => {
+        polygon.bindTooltip('安塞区基础设施监管范围', {
+          sticky: true,
+          className: 'gis-tooltip'
+        })
+        polygon.on({
+          mouseover: () => polygon.setStyle(getRiskAreaStyle(true)),
+          mouseout: () => polygon.setStyle(getRiskAreaStyle(false))
+        })
       }
     })
     layer.addTo(map)
@@ -413,11 +445,58 @@ function filteredFeatures(key) {
 // ---------------------------------------------------------------------------
 // 渲染：地图组件只消费标准 GeoJSON Feature
 // ---------------------------------------------------------------------------
-function lineWeight(cfg, props) {
-  const base = cfg.weight || 3
-  if (props._status === 'danger') return base + 2
-  if (props._status === 'warning') return base + 1
-  return base
+function getRiskAreaStyle(active = false) {
+  return {
+    color: active ? '#718AA0' : '#8294A3',
+    weight: active ? 2 : 1.5,
+    opacity: active ? 0.78 : 0.58,
+    fillColor: '#7890A4',
+    fillOpacity: active ? 0.075 : 0.045,
+    dashArray: active ? '7 5' : '6 6',
+    lineCap: 'round',
+    lineJoin: 'round'
+  }
+}
+
+function isTrunkPipeline(props) {
+  if (props.is_main === true || props.isMain === true || props.trunk === true) return true
+  const level = String(props.pipeline_level ?? props.level ?? props.grade ?? '').toLowerCase()
+  if (level.includes('main') || level.includes('trunk') || level.includes('主干')) return true
+  return Number(props.diameter ?? props.pipeDiameter ?? 0) >= 250
+}
+
+function getPipelineStyle(cfg, props, state = 'default') {
+  const status = props._status || 'normal'
+  const trunk = isTrunkPipeline(props)
+  const typeColor = cfg.color
+  const color = status === 'danger'
+    ? '#C94F46'
+    : status === 'warning' ? '#D18B3C' : typeColor
+  const normalWeight = trunk ? 2.4 : 1.65
+  const weight = normalWeight + (status === 'danger' ? 0.55 : status === 'warning' ? 0.25 : 0)
+  const opacity = status === 'danger' ? 0.92 : status === 'warning' ? 0.82 : (trunk ? 0.74 : 0.64)
+
+  if (state === 'hover') return { color, weight: weight + 0.8, opacity: Math.min(1, opacity + 0.18) }
+  if (state === 'selected') return { color, weight: weight + 1.45, opacity: 1 }
+  return { color, weight, opacity }
+}
+
+function getMarkerVisual(cfg, props) {
+  const status = props._status || 'normal'
+  const isAlert = cfg.key === 'alert'
+  const isRisk = cfg.key === 'hazard'
+  const size = status === 'danger' ? (isAlert || isRisk ? 15 : 13) : status === 'warning' ? 11 : (isAlert ? 10 : 8)
+  const pane = status === 'danger'
+    ? 'gis-critical-pane'
+    : (status === 'warning' || isAlert || isRisk) ? 'gis-warning-pane' : 'gis-facility-pane'
+  return { size, pane }
+}
+
+function shouldPulse(cfg, props) {
+  if (props._status !== 'danger') return false
+  const level = String(props.warning_level ?? props.warningLevel ?? props.alertLevel ?? props.risk_level ?? props.riskLevel ?? '').toLowerCase()
+  return (cfg.key === 'alert' && (level.includes('red') || level.includes('红')))
+    || (cfg.key === 'hazard' && level.includes('极高'))
 }
 
 /**
@@ -425,65 +504,129 @@ function lineWeight(cfg, props) {
  * 不拼接任何后端文本，避免注入风险。字形由 CSS ::before 提供。
  */
 function pointIcon(cfg, props, isSelected = false) {
+  const { size } = getMarkerVisual(cfg, props)
   const classes = [
     'gis-pin',
     `gis-pin--${cfg.key}`,
     `gis-pin--s-${props._status}`,
     `gis-pin--k-${props._iconKind || 'default'}`
   ]
-  if (cfg.pulse && props._status === 'danger') classes.push('is-pulse')
+  if (shouldPulse(cfg, props)) classes.push('is-pulse')
   if (isSelected) classes.push('is-selected')
+  const hostSize = Math.max(24, size + 12)
   return L.divIcon({
     className: 'gis-pin-host',
     html: `<span class="${classes.join(' ')}"></span>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13]
+    iconSize: [hostSize, hostSize],
+    iconAnchor: [hostSize / 2, hostSize / 2]
   })
 }
 
 function bindFeature(cfg, feature, layer) {
   layer.__gisProps = feature.properties
+  layer.__gisCfg = cfg
+  layer.__gisTooltipMode = 'hover'
+  layer.bindTooltip(feature.properties._title, {
+    sticky: true,
+    direction: 'top',
+    offset: [0, -8],
+    opacity: 0.96,
+    className: 'gis-tooltip'
+  })
   layer.on('click', (event) => {
     L.DomEvent.stopPropagation(event)
     selectFeature(cfg, feature, layer, event.latlng)
   })
 }
 
+function updateLineState(layer, state) {
+  const cfg = layer.__gisCfg
+  const props = layer.__gisProps
+  if (!cfg || !props) return
+  const style = getPipelineStyle(cfg, props, state)
+  layer.__gisMain?.setStyle(style)
+  layer.setStyle({
+    color: state === 'selected' ? '#FFFFFF' : '#F7F8F6',
+    weight: style.weight + (state === 'selected' ? 3.2 : 2.2),
+    opacity: state === 'default' ? 0.48 : 0.82
+  })
+  if (layer.__gisGlow) {
+    layer.__gisGlow.setStyle({
+      weight: style.weight + (state === 'selected' ? 5.5 : 4),
+      opacity: state === 'default' ? 0.16 : 0.28
+    })
+  }
+}
+
 function buildLine(cfg, feature, group) {
   const coords = feature.geometry.coordinates.map(([lon, lat]) => [lat, lon])
-  const weight = lineWeight(cfg, feature.properties)
-  // 浅色描边：与底图道路区分，同时作为更宽的点击热区
-  const halo = L.polyline(coords, {
-    color: '#FFFFFF',
-    weight: weight + 6,
-    opacity: 0.92,
+  const style = getPipelineStyle(cfg, feature.properties)
+
+  // 细浅描边用于从道路中分离，并兼任点击热区；不再制造整条粗白色发光线。
+  const casing = L.polyline(coords, {
+    pane: 'gis-pipeline-pane',
+    color: '#F7F8F6',
+    weight: style.weight + 2.2,
+    opacity: 0.48,
     lineCap: 'round',
     lineJoin: 'round'
   })
   const main = L.polyline(coords, {
-    color: cfg.color,
-    weight,
-    opacity: 0.95,
+    pane: 'gis-pipeline-pane',
+    ...style,
     lineCap: 'round',
     lineJoin: 'round',
     interactive: false
   })
-  bindFeature(cfg, feature, halo)
-  halo.__gisMain = main
-  halo.__gisWeight = weight
-  halo.addTo(group)
+  let glow = null
+  if (feature.properties._status === 'danger') {
+    glow = L.polyline(coords, {
+      pane: 'gis-pipeline-pane',
+      color: '#C94F46',
+      weight: style.weight + 4,
+      opacity: 0.16,
+      lineCap: 'round',
+      lineJoin: 'round',
+      interactive: false
+    })
+    glow.addTo(group)
+  }
+  bindFeature(cfg, feature, casing)
+  casing.__gisMain = main
+  casing.__gisGlow = glow
+  casing.__gisCoords = coords
+  casing.on({
+    mouseover: () => { if (highlighted?.layer !== casing) updateLineState(casing, 'hover') },
+    mouseout: () => { if (highlighted?.layer !== casing) updateLineState(casing, 'default') }
+  })
+  casing.addTo(group)
   main.addTo(group)
+  return {
+    cfg,
+    feature,
+    isTrunk: isTrunkPipeline(feature.properties),
+    layers: [glow, casing, main].filter(Boolean),
+    interactiveLayer: casing
+  }
 }
 
 function buildPoint(cfg, feature, group) {
   const [lon, lat] = feature.geometry.coordinates
+  const visual = getMarkerVisual(cfg, feature.properties)
   const marker = L.marker([lat, lon], {
     icon: pointIcon(cfg, feature.properties),
+    pane: visual.pane,
+    zIndexOffset: feature.properties._status === 'danger' ? 500 : feature.properties._status === 'warning' ? 250 : 0,
     riseOnHover: true,
     keyboard: false
   })
   bindFeature(cfg, feature, marker)
+  marker.on({
+    mouseover: () => marker.getElement()?.classList.add('is-hovered'),
+    mouseout: () => marker.getElement()?.classList.remove('is-hovered')
+  })
   marker.addTo(group)
+  return { cfg, feature, layers: [marker], interactiveLayer: marker }
 }
 
 function renderLayer(key) {
@@ -491,29 +634,156 @@ function renderLayer(key) {
   const group = groups[key]
   if (!cfg || !group) return
   group.clearLayers()
+  rendered[key] = []
   const features = filteredFeatures(key)
   counts[key] = features.length
   for (const feature of features) {
-    if (cfg.geometry === 'line') buildLine(cfg, feature, group)
-    else buildPoint(cfg, feature, group)
+    const bundle = cfg.geometry === 'line'
+      ? buildLine(cfg, feature, group)
+      : buildPoint(cfg, feature, group)
+    rendered[key].push(bundle)
   }
 }
 
 function renderAll() {
   for (const cfg of GIS_LAYERS) renderLayer(cfg.key)
   applyZoomVisibility()
+  renderClusters()
+  renderNetworkNodes()
+  applyLabels()
 }
 
-/** 按缩放级别控制图层显隐 */
+function setBundleVisible(group, bundle, show) {
+  for (const layer of bundle.layers) {
+    if (show && !group.hasLayer(layer)) group.addLayer(layer)
+    else if (!show && group.hasLayer(layer)) group.removeLayer(layer)
+  }
+}
+
+function shouldShowFeatureAtZoom(cfg, feature, zoom) {
+  const status = feature.properties._status || 'normal'
+  if (cfg.geometry === 'line') return zoom >= 12 || isTrunkPipeline(feature.properties)
+  if (zoom <= 12) return false // 低缩放由风险/预警聚合点表达
+  if (cfg.key === 'alert' || cfg.key === 'hazard') return zoom >= 15 || status !== 'normal'
+  if (cfg.key === 'asset') return zoom >= 15 || (zoom >= 13 && status !== 'normal')
+  if (cfg.key === 'manhole') return zoom >= 16 || (zoom >= 15 && status === 'danger')
+  return zoom >= cfg.minZoom
+}
+
+/** 按缩放级别控制整层与单要素 LOD */
 function applyZoomVisibility() {
   if (!map) return
   const zoom = map.getZoom()
   for (const cfg of GIS_LAYERS) {
     const group = groups[cfg.key]
     if (!group) continue
-    const shouldShow = visible[cfg.key] && zoom >= cfg.minZoom
-    if (shouldShow && !map.hasLayer(group)) group.addTo(map)
-    else if (!shouldShow && map.hasLayer(group)) map.removeLayer(group)
+    if (!visible[cfg.key]) {
+      if (map.hasLayer(group)) map.removeLayer(group)
+      continue
+    }
+    if (!map.hasLayer(group)) group.addTo(map)
+    for (const bundle of rendered[cfg.key] || []) {
+      setBundleVisible(group, bundle, shouldShowFeatureAtZoom(cfg, bundle.feature, zoom))
+    }
+  }
+}
+
+/**
+ * 低缩放级别的轻量聚合。无需额外插件，按当前地图投影的像素网格合并风险/预警点；
+ * 放大到 13 级后自动拆散为业务单点。
+ */
+function renderClusters() {
+  if (!map || !clusterGroup) return
+  clusterGroup.clearLayers()
+  const zoom = map.getZoom()
+  if (zoom > 12) return
+
+  const cellSize = zoom <= 10 ? 88 : 70
+  const buckets = new Map()
+  for (const key of ['hazard', 'alert']) {
+    if (!visible[key]) continue
+    const cfg = LAYER_MAP[key]
+    for (const feature of filteredFeatures(key)) {
+      if (feature.properties._status === 'normal') continue
+      const [lon, lat] = feature.geometry.coordinates
+      const pixel = map.project(L.latLng(lat, lon), zoom)
+      const bucketKey = `${Math.floor(pixel.x / cellSize)}:${Math.floor(pixel.y / cellSize)}`
+      const bucket = buckets.get(bucketKey) || { items: [], lat: 0, lon: 0, danger: false }
+      bucket.items.push({ cfg, feature })
+      bucket.lat += lat
+      bucket.lon += lon
+      bucket.danger ||= feature.properties._status === 'danger'
+      buckets.set(bucketKey, bucket)
+    }
+  }
+
+  for (const bucket of buckets.values()) {
+    const count = bucket.items.length
+    const lat = bucket.lat / count
+    const lon = bucket.lon / count
+    const size = 28 + Math.min(8, count * 1.5)
+    const marker = L.marker([lat, lon], {
+      pane: bucket.danger ? 'gis-critical-pane' : 'gis-warning-pane',
+      icon: L.divIcon({
+        className: 'gis-cluster-host',
+        html: `<span class="gis-cluster${bucket.danger ? ' is-danger' : ''}">${count}</span>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2]
+      }),
+      keyboard: false
+    })
+    marker.bindTooltip(`${count} 个风险 / 预警点，点击放大查看`, {
+      direction: 'top',
+      className: 'gis-tooltip'
+    })
+    marker.on('click', (event) => {
+      L.DomEvent.stopPropagation(event)
+      const bounds = L.latLngBounds(bucket.items.map(({ feature }) => {
+        const [itemLon, itemLat] = feature.geometry.coordinates
+        return [itemLat, itemLon]
+      }))
+      if (count === 1) map.setView([lat, lon], 14)
+      else map.fitBounds(bounds, { padding: [54, 54], maxZoom: 14 })
+    })
+    marker.addTo(clusterGroup)
+  }
+}
+
+/** 高缩放级别基于已有管线坐标显示端点/转折点，不额外虚构拓扑数据。 */
+function renderNetworkNodes() {
+  if (!map || !networkNodeGroup) return
+  networkNodeGroup.clearLayers()
+  if (map.getZoom() < 16) return
+  const seen = new Set()
+  for (const cfg of GIS_LAYERS.filter((item) => item.geometry === 'line')) {
+    if (!visible[cfg.key]) continue
+    for (const bundle of rendered[cfg.key] || []) {
+      const coords = bundle.feature.geometry.coordinates
+      coords.forEach(([lon, lat], index) => {
+        const id = `${lon.toFixed(5)}:${lat.toFixed(5)}`
+        if (seen.has(id)) return
+        seen.add(id)
+        const kind = index === 0 || index === coords.length - 1 ? '端点' : '转折点'
+        const node = L.circleMarker([lat, lon], {
+          pane: 'gis-node-pane',
+          radius: 3,
+          color: '#FFFFFF',
+          weight: 1,
+          opacity: 0.9,
+          fillColor: cfg.color,
+          fillOpacity: 0.82
+        })
+        node.bindTooltip(`${bundle.feature.properties._title} · ${kind}`, {
+          sticky: true,
+          className: 'gis-tooltip'
+        })
+        node.on('click', (event) => {
+          L.DomEvent.stopPropagation(event)
+          selectFeature(cfg, bundle.feature, bundle.interactiveLayer, event.latlng)
+        })
+        node.addTo(networkNodeGroup)
+      })
+    }
   }
 }
 
@@ -529,20 +799,26 @@ function applyLabels() {
     group.eachLayer((layer) => {
       const props = layer.__gisProps
       if (!props) return
+      const desiredMode = show ? 'label' : 'hover'
+      if (layer.__gisTooltipMode === desiredMode) return
+      layer.unbindTooltip()
       if (show) {
-        if (!layer.getTooltip()) {
-          layer
-            .bindTooltip(props._title, {
-              permanent: true,
-              direction: 'top',
-              offset: [0, -13],
-              className: 'gis-label'
-            })
-            .openTooltip()
-        }
-      } else if (layer.getTooltip()) {
-        layer.unbindTooltip()
+        layer.bindTooltip(props._title, {
+          permanent: true,
+          direction: 'top',
+          offset: [0, -13],
+          className: 'gis-label'
+        }).openTooltip()
+      } else {
+        layer.bindTooltip(props._title, {
+          sticky: true,
+          direction: 'top',
+          offset: [0, -8],
+          opacity: 0.96,
+          className: 'gis-tooltip'
+        })
       }
+      layer.__gisTooltipMode = desiredMode
     })
   }
 }
@@ -565,22 +841,49 @@ function selectFeature(cfg, feature, layer, latlng) {
   highlighted = { layer, cfg, props }
 
   if (cfg.geometry === 'line') {
-    layer.setStyle({ weight: layer.__gisWeight + 10, opacity: 1 })
+    updateLineState(layer, 'selected')
+    layer.__gisMain?.bringToFront()
+    layer.bringToFront()
+    selectedOverlay = L.polyline(layer.__gisCoords, {
+      pane: 'gis-selected-pane',
+      color: '#315B78',
+      weight: getPipelineStyle(cfg, props).weight + 3.8,
+      opacity: 0.24,
+      lineCap: 'round',
+      lineJoin: 'round',
+      interactive: false
+    }).addTo(map)
   } else {
     layer.setIcon(pointIcon(cfg, props, true))
+    layer.setZIndexOffset(1200)
+    const markerVisual = getMarkerVisual(cfg, props)
+    selectedOverlay = L.circleMarker(layer.getLatLng(), {
+      pane: 'gis-selected-pane',
+      radius: markerVisual.size / 2 + 4,
+      color: '#315B78',
+      weight: 2,
+      opacity: 0.72,
+      fill: false,
+      interactive: false
+    }).addTo(map)
   }
 
   drawerVisible.value = true
 }
 
 function clearHighlight() {
+  if (selectedOverlay) {
+    selectedOverlay.remove()
+    selectedOverlay = null
+  }
   if (!highlighted) return
   const { layer, cfg, props } = highlighted
   try {
     if (cfg.geometry === 'line') {
-      layer.setStyle({ weight: layer.__gisWeight + 6, opacity: 0.92 })
+      updateLineState(layer, 'default')
     } else {
       layer.setIcon(pointIcon(cfg, props, false))
+      layer.setZIndexOffset(props._status === 'danger' ? 500 : props._status === 'warning' ? 250 : 0)
     }
   } catch {
     // 图层已因筛选/刷新被重建，忽略
@@ -678,7 +981,11 @@ function togglePanel() {
   nextTick(() => setTimeout(() => map?.invalidateSize(), 320))
 }
 
-watch(visible, () => applyZoomVisibility())
+watch(visible, () => {
+  applyZoomVisibility()
+  renderClusters()
+  renderNetworkNodes()
+})
 // 关键字必须一并监听：否则只有关键字命中的空数据态点「重置筛选」时，
 // 区域/状态本就为空、watcher 不触发，地图会一直停在空白。
 watch([areaFilter, statusFilter, appliedKeyword], () => renderAll())
@@ -1005,6 +1312,11 @@ onBeforeUnmount(() => {
   outline: none;
 }
 
+/* 轻微压低 OSM 底图，不牺牲道路、水系和行政边界的辨识度。 */
+.gis-mapwrap .leaflet-tile-pane {
+  filter: saturate(0.72) contrast(0.92) brightness(1.035);
+}
+
 .gis-mapwrap .leaflet-control-zoom {
   border: 1px solid var(--app-border) !important;
   border-radius: 12px !important;
@@ -1053,8 +1365,29 @@ onBeforeUnmount(() => {
   display: none;
 }
 
+/* hover tooltip：克制的白色信息卡，不使用暗色气泡或重阴影。 */
+.gis-mapwrap .gis-tooltip {
+  padding: 5px 8px;
+  font-family: var(--app-font-family);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: #30353B;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(84, 101, 116, 0.18);
+  border-radius: 6px;
+  box-shadow: 0 3px 10px rgba(42, 54, 64, 0.12);
+}
+.gis-mapwrap .gis-tooltip::before {
+  border-top-color: rgba(255, 255, 255, 0.96);
+}
+
 /* ===================== 点位图标 ===================== */
 .gis-mapwrap .gis-pin-host {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: 0;
 }
@@ -1065,37 +1398,61 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 22px;
-  height: 22px;
+  width: 8px;
+  height: 8px;
   font-family: var(--app-font-family);
-  font-size: 10px;
+  font-size: 0;
   font-weight: 600;
   line-height: 1;
-  color: #fff;
-  background-color: var(--app-text-3);
-  border: 2px solid #fff;
+  color: transparent;
+  background-color: #71847A;
+  border: 1px solid rgba(255, 255, 255, 0.92);
   border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
-  transition: transform 0.18s ease;
+  box-shadow: 0 1px 3px rgba(37, 49, 43, 0.26);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
 }
 .gis-mapwrap .gis-pin::before {
   content: '';
 }
 .gis-mapwrap .gis-pin.is-selected {
-  transform: scale(1.28);
-  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.28), 0 3px 10px rgba(0, 0, 0, 0.3);
+  transform: scale(1.3);
+  box-shadow: 0 0 0 3px rgba(52, 82, 105, 0.22), 0 2px 7px rgba(37, 49, 43, 0.3);
+}
+.gis-mapwrap .gis-pin-host.is-hovered .gis-pin {
+  transform: scale(1.24);
 }
 
 /* 三态底色 */
-.gis-mapwrap .gis-pin--s-normal { background-color: #34C759; }
-.gis-mapwrap .gis-pin--s-warning { background-color: #FF9500; }
-.gis-mapwrap .gis-pin--s-danger { background-color: #FF3B30; }
+.gis-mapwrap .gis-pin--s-normal { background-color: #71847A; }
+.gis-mapwrap .gis-pin--s-warning {
+  width: 11px;
+  height: 11px;
+  font-size: 8px;
+  color: #fff;
+  background-color: #D59435;
+  border-width: 1.5px;
+}
+.gis-mapwrap .gis-pin--s-danger {
+  width: 15px;
+  height: 15px;
+  font-size: 9px;
+  color: #fff;
+  background-color: #C84740;
+  border-width: 1.5px;
+  box-shadow: 0 2px 5px rgba(130, 48, 43, 0.3);
+}
 
 /* 预警事件：按等级用固定色，覆盖三态底色 */
-.gis-mapwrap .gis-pin--alert.gis-pin--k-blue { background-color: #0071E3; }
-.gis-mapwrap .gis-pin--alert.gis-pin--k-yellow { background-color: #FFCC00; color: #6A4B00; }
-.gis-mapwrap .gis-pin--alert.gis-pin--k-orange { background-color: #FF9500; }
-.gis-mapwrap .gis-pin--alert.gis-pin--k-red { background-color: #FF3B30; width: 26px; height: 26px; font-size: 11px; }
+.gis-mapwrap .gis-pin--alert {
+  width: 10px;
+  height: 10px;
+  font-size: 8px;
+  color: #fff;
+}
+.gis-mapwrap .gis-pin--alert.gis-pin--k-blue { background-color: #5D82A3; }
+.gis-mapwrap .gis-pin--alert.gis-pin--k-yellow { background-color: #D3A23B; color: #fff; }
+.gis-mapwrap .gis-pin--alert.gis-pin--k-orange { width: 12px; height: 12px; background-color: #D4773F; }
+.gis-mapwrap .gis-pin--alert.gis-pin--k-red { width: 15px; height: 15px; font-size: 9px; background-color: #C84740; }
 
 /* 分类字形：内容全部来自 CSS，不拼接后端文本 */
 .gis-mapwrap .gis-pin--k-gas::before { content: '燃'; }
@@ -1105,24 +1462,58 @@ onBeforeUnmount(() => {
 .gis-mapwrap .gis-pin--k-camera::before { content: '摄'; }
 .gis-mapwrap .gis-pin--k-detector::before { content: '探'; }
 .gis-mapwrap .gis-pin--k-fan::before { content: '风'; }
-.gis-mapwrap .gis-pin--alert::before { content: '!'; font-size: 13px; }
+.gis-mapwrap .gis-pin--alert::before { content: '!'; font-size: inherit; }
 
 /* 高风险脉冲动画 */
 .gis-mapwrap .gis-pin.is-pulse::after {
   content: '';
   position: absolute;
-  inset: -4px;
+  inset: -5px;
   border-radius: 50%;
-  border: 2px solid currentColor;
-  color: #FF3B30;
+  border: 1.5px solid currentColor;
+  color: #C84740;
   opacity: 0;
   animation: gis-pulse 1.8s ease-out infinite;
   pointer-events: none;
 }
 @keyframes gis-pulse {
-  0% { transform: scale(0.72); opacity: 0.85; }
-  70% { transform: scale(1.7); opacity: 0; }
-  100% { transform: scale(1.7); opacity: 0; }
+  0% { transform: scale(0.8); opacity: 0.38; }
+  72% { transform: scale(1.55); opacity: 0; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+
+/* 低缩放风险聚合：数量清楚，但体量显著小于旧版大圆点。 */
+.gis-mapwrap .gis-cluster-host {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+}
+.gis-mapwrap .gis-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  font-family: var(--app-font-family);
+  font-size: 11px;
+  font-weight: 700;
+  color: #6B4B1D;
+  background: rgba(229, 182, 94, 0.84);
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(77, 63, 38, 0.2);
+}
+.gis-mapwrap .gis-cluster.is-danger {
+  color: #fff;
+  background: rgba(190, 69, 62, 0.86);
+  box-shadow: 0 2px 8px rgba(122, 45, 40, 0.24);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gis-mapwrap .gis-pin.is-pulse::after { animation: none; }
 }
 
 /* ===================== 详情抽屉 ===================== */

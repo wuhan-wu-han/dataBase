@@ -16,138 +16,144 @@ import { GIS_LAYERS, LAYER_MAP, areaOf } from '@/config/gisLayers'
 // ---------------------------------------------------------------------------
 
 function mockGasPipelines() {
-  const stations = [
-    { name: '测站A', lon: 109.20, lat: 36.54 },
-    { name: '测站B', lon: 109.22, lat: 36.55 },
-    { name: '测站C', lon: 109.24, lat: 36.56 },
-    { name: '测站D', lon: 109.21, lat: 36.57 },
-    { name: '测站E', lon: 109.25, lat: 36.53 }
+  return [
+    {
+      id: 'GP-001', name: '沿河燃气主干线', pressure: '0.52', diameter: 300,
+      risk_level: '低', status: '正常', is_main: true,
+      coordinates: [[109.176, 36.548], [109.192, 36.552], [109.209, 36.550], [109.226, 36.556], [109.246, 36.553], [109.267, 36.558]]
+    },
+    {
+      id: 'GP-002', name: '城北燃气支线', pressure: '0.38', diameter: 160,
+      risk_level: '低', status: '正常',
+      coordinates: [[109.209, 36.550], [109.207, 36.563], [109.213, 36.575], [109.211, 36.588]]
+    },
+    {
+      id: 'GP-003', name: '城南燃气支线', pressure: '0.41', diameter: 180,
+      risk_level: '中', status: '正常',
+      coordinates: [[109.226, 36.556], [109.231, 36.544], [109.229, 36.532], [109.236, 36.519]]
+    },
+    {
+      id: 'GP-004', name: '工业园燃气管段', pressure: '0.63', diameter: 250,
+      risk_level: '高', status: '告警',
+      coordinates: [[109.246, 36.553], [109.257, 36.548], [109.270, 36.551], [109.279, 36.546]]
+    },
+    {
+      id: 'GP-005', name: '西片区燃气支线', pressure: '0.35', diameter: 150,
+      risk_level: '低', status: '正常',
+      coordinates: [[109.192, 36.552], [109.184, 36.562], [109.173, 36.568]]
+    }
   ]
-  const list = []
-  for (let i = 0; i < stations.length - 1; i++) {
-    list.push({
-      id: `GP-${String(i + 1).padStart(3, '0')}`,
-      name: `${stations[i].name}-${stations[i + 1].name}管线`,
-      pressure: (0.3 + Math.random() * 0.5).toFixed(2),
-      diameter: [150, 200, 300][i % 3],
-      risk_level: ['低', '中', '高'][Math.floor(Math.random() * 3)],
-      status: Math.random() > 0.15 ? '正常' : '告警',
-      coordinates: [
-        [stations[i].lon, stations[i].lat],
-        [(stations[i].lon + stations[i + 1].lon) / 2, (stations[i].lat + stations[i + 1].lat) / 2 + 0.004],
-        [stations[i + 1].lon, stations[i + 1].lat]
-      ]
-    })
-  }
-  return list
 }
 
 function mockWaterPipelines() {
-  const pts = [
-    { lon: 109.19, lat: 36.52 }, { lon: 109.22, lat: 36.54 },
-    { lon: 109.25, lat: 36.56 }, { lon: 109.23, lat: 36.58 },
-    { lon: 109.20, lat: 36.60 }
+  return [
+    {
+      id: 'WP-001', name: '中心城区供水主干线', diameter: 400, pressure: '0.34', status: '正常', is_main: true,
+      coordinates: [[109.181, 36.536], [109.198, 36.541], [109.216, 36.540], [109.235, 36.545], [109.254, 36.541]]
+    },
+    {
+      id: 'WP-002', name: '北片区供水支线', diameter: 180, pressure: '0.28', status: '正常',
+      coordinates: [[109.216, 36.540], [109.220, 36.552], [109.218, 36.565], [109.224, 36.579]]
+    },
+    {
+      id: 'WP-003', name: '东片区供水支线', diameter: 160, pressure: '0.26', status: '维护中',
+      coordinates: [[109.235, 36.545], [109.247, 36.550], [109.260, 36.548], [109.272, 36.554]]
+    },
+    {
+      id: 'WP-004', name: '西片区供水支线', diameter: 150, pressure: '0.25', status: '正常',
+      coordinates: [[109.198, 36.541], [109.191, 36.531], [109.179, 36.525], [109.169, 36.528]]
+    }
   ]
-  const list = []
-  for (let i = 0; i < pts.length - 1; i++) {
-    list.push({
-      id: `WP-${String(i + 1).padStart(3, '0')}`,
-      name: `供水管线 ${i + 1}`,
-      diameter: (100 + Math.random() * 300).toFixed(0),
-      pressure: (0.2 + Math.random() * 0.3).toFixed(2),
-      status: Math.random() > 0.1 ? '正常' : '维护中',
-      coordinates: [[pts[i].lon, pts[i].lat], [pts[i + 1].lon, pts[i + 1].lat]]
-    })
-  }
-  return list
 }
 
 function mockWastePipelines() {
-  const pts = [
-    { lon: 109.21, lat: 36.51 }, { lon: 109.23, lat: 36.53 },
-    { lon: 109.26, lat: 36.55 }, { lon: 109.24, lat: 36.57 }
+  return [
+    {
+      id: 'WW-001', name: '沿河污水主干线', flow_rate: '32.4', diameter: 350, status: '正常', is_main: true,
+      coordinates: [[109.184, 36.526], [109.201, 36.530], [109.219, 36.527], [109.238, 36.533], [109.258, 36.530]]
+    },
+    {
+      id: 'WW-002', name: '城区污水支线', flow_rate: '18.7', diameter: 180, status: '正常',
+      coordinates: [[109.219, 36.527], [109.216, 36.539], [109.222, 36.550]]
+    },
+    {
+      id: 'WW-003', name: '东南片区污水支线', flow_rate: '21.2', diameter: 200, status: '正常',
+      coordinates: [[109.238, 36.533], [109.247, 36.522], [109.260, 36.516], [109.271, 36.520]]
+    }
   ]
-  const list = []
-  for (let i = 0; i < pts.length - 1; i++) {
-    list.push({
-      id: `WW-${String(i + 1).padStart(3, '0')}`,
-      name: `废水管线 ${i + 1}`,
-      flow_rate: (Math.random() * 50).toFixed(1),
-      status: '正常',
-      coordinates: [[pts[i].lon, pts[i].lat], [pts[i + 1].lon, pts[i + 1].lat]]
-    })
-  }
-  return list
 }
 
 function mockManholes() {
-  const list = []
-  for (let i = 0; i < 12; i++) {
-    list.push({
-      id: `MH-${String(i + 1).padStart(3, '0')}`,
-      name: `智能井盖 #${i + 1}`,
-      type: ['燃气', '供水', '排水'][i % 3],
-      status: Math.random() > 0.2 ? '正常' : '异常',
-      coordinates: [109.19 + Math.random() * 0.08, 36.50 + Math.random() * 0.08]
-    })
-  }
-  return list
+  const points = [
+    [109.192, 36.552], [109.209, 36.550], [109.226, 36.556], [109.246, 36.553],
+    [109.198, 36.541], [109.216, 36.540], [109.235, 36.545], [109.254, 36.541],
+    [109.201, 36.530], [109.219, 36.527], [109.238, 36.533], [109.258, 36.530]
+  ]
+  return points.map((coordinates, i) => ({
+    id: `MH-${String(i + 1).padStart(3, '0')}`,
+    name: `智能井盖 #${i + 1}`,
+    type: ['燃气', '供水', '排水'][i % 3],
+    status: i === 9 ? '异常' : '正常',
+    coordinates
+  }))
 }
 
 function mockCavities() {
-  const list = []
-  for (let i = 0; i < 8; i++) {
-    list.push({
-      id: `RH-${String(i + 1).padStart(3, '0')}`,
-      risk_level: ['低风险', '中风险', '高风险', '极高风险'][Math.floor(Math.random() * 4)],
-      settlement: (Math.random() * 50).toFixed(1),
-      location: `安塞路 ${i + 1} #${['北', '南', '东', '西'][i % 4]}`,
-      impact_radius: (50 + Math.random() * 200).toFixed(0),
-      coordinates: [109.19 + Math.random() * 0.07, 36.53 + Math.random() * 0.05]
-    })
-  }
-  return list
+  const rows = [
+    ['低风险', '4.6', '城西支路北侧', '55', [109.185, 36.558]],
+    ['低风险', '6.1', '中心街西段', '60', [109.204, 36.548]],
+    ['中风险', '15.8', '中心街东段', '95', [109.229, 36.551]],
+    ['低风险', '7.4', '河滨路南段', '70', [109.242, 36.529]],
+    ['高风险', '31.2', '工业园入口', '145', [109.263, 36.550]],
+    ['低风险', '5.2', '城北连接线', '50', [109.216, 36.571]],
+    ['中风险', '18.5', '东南片区支路', '105', [109.253, 36.520]],
+    ['极高风险', '43.8', '工业园东侧道路', '180', [109.274, 36.547]]
+  ]
+  return rows.map(([risk_level, settlement, location, impact_radius, coordinates], i) => ({
+    id: `RH-${String(i + 1).padStart(3, '0')}`,
+    risk_level, settlement, location, impact_radius, coordinates
+  }))
 }
 
 function mockAssets() {
   const types = ['气体传感器', '摄像头', '气体探测器', '通风设备']
-  const statuses = ['在线', '离线', '故障']
-  const list = []
-  for (let i = 0; i < 15; i++) {
-    list.push({
-      id: `AS-${String(i + 1).padStart(3, '0')}`,
-      device_type: types[i % types.length],
-      online_status: statuses[i % statuses.length],
-      asset_status: ['正常', '维护中', '报废'][Math.floor(Math.random() * 3)],
-      coordinates: [109.19 + Math.random() * 0.07, 36.53 + Math.random() * 0.05]
-    })
-  }
-  return list
+  const points = [
+    [109.187, 36.550], [109.198, 36.552], [109.209, 36.550], [109.220, 36.553],
+    [109.231, 36.554], [109.242, 36.554], [109.253, 36.550], [109.263, 36.555],
+    [109.207, 36.563], [109.213, 36.575], [109.231, 36.544], [109.229, 36.532],
+    [109.198, 36.541], [109.219, 36.527], [109.247, 36.522]
+  ]
+  return points.map((coordinates, i) => ({
+    id: `AS-${String(i + 1).padStart(3, '0')}`,
+    device_type: types[i % types.length],
+    online_status: i === 6 ? '故障' : i === 10 ? '离线' : '在线',
+    asset_status: i === 10 ? '维护中' : '正常',
+    coordinates
+  }))
 }
 
 function mockAlerts() {
-  const levels = [
-    { level: 'blue', label: '蓝色预警' },
-    { level: 'yellow', label: '黄色预警' },
-    { level: 'orange', label: '橙色预警' },
-    { level: 'red', label: '红色预警' }
-  ]
+  const levels = ['blue', 'blue', 'yellow', 'blue', 'orange', 'yellow', 'blue', 'yellow', 'orange', 'red']
+  const labels = { blue: '蓝色预警', yellow: '黄色预警', orange: '橙色预警', red: '红色预警' }
   const devices = ['PRESSURE', 'TEMPERATURE', 'GAS', 'FLOW']
-  const list = []
-  for (let i = 0; i < 10; i++) {
-    const lvl = levels[Math.floor(Math.random() * levels.length)]
-    list.push({
+  const points = [
+    [109.190, 36.551], [109.205, 36.550], [109.218, 36.553], [109.233, 36.554], [109.260, 36.550],
+    [109.210, 36.567], [109.231, 36.538], [109.245, 36.530], [109.267, 36.552], [109.276, 36.547]
+  ]
+  const baseTime = Date.parse('2026-09-03T09:00:00+08:00')
+  return points.map((coordinates, i) => {
+    const level = levels[i]
+    return {
       id: `AL-${String(i + 1).padStart(3, '0')}`,
-      warning_level: lvl.level,
-      warning_label: lvl.label,
+      warning_level: level,
+      warning_label: labels[level],
       device_type: devices[i % devices.length],
       area_id: `AREA-${String((i % 4) + 1).padStart(2, '0')}`,
       description: `区域 ${['A', 'B', 'C', 'D'][i % 4]} 监测异常`,
-      event_time: new Date(Date.now() - i * 3600_000).toISOString().slice(0, 19).replace('T', ' '),
-      coordinates: [109.19 + Math.random() * 0.07, 36.53 + Math.random() * 0.05]
-    })
-  }
-  return list
+      event_time: new Date(baseTime - i * 3600_000).toISOString().slice(0, 19).replace('T', ' '),
+      coordinates
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------

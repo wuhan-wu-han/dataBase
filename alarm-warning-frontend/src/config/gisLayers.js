@@ -47,9 +47,9 @@ export function areaOf(coords) {
 // ---------------------------------------------------------------------------
 
 export const STATUS = {
-  normal: { key: 'normal', label: '正常', color: '#34C759' },
-  warning: { key: 'warning', label: '预警', color: '#FF9500' },
-  danger: { key: 'danger', label: '高风险', color: '#FF3B30' }
+  normal: { key: 'normal', label: '正常', color: '#71847A' },
+  warning: { key: 'warning', label: '预警', color: '#D59435' },
+  danger: { key: 'danger', label: '高风险', color: '#C84740' }
 }
 
 export const STATUS_OPTIONS = [
@@ -138,8 +138,8 @@ export const GIS_LAYERS = [
     label: '燃气管网',
     group: '管网管线',
     geometry: 'line',
-    color: '#FF3B30',
-    weight: 3,
+    color: '#C8755C',
+    weight: 2.2,
     minZoom: 10,
     labelZoom: 99,
     route: '/gas-risk',
@@ -164,8 +164,8 @@ export const GIS_LAYERS = [
     label: '供水管网',
     group: '管网管线',
     geometry: 'line',
-    color: '#0071E3',
-    weight: 3,
+    color: '#557FA4',
+    weight: 2.2,
     minZoom: 10,
     labelZoom: 99,
     route: '/utility-tunnel',
@@ -185,8 +185,8 @@ export const GIS_LAYERS = [
     label: '废水管网',
     group: '管网管线',
     geometry: 'line',
-    color: '#30C0C0',
-    weight: 3,
+    color: '#688B8A',
+    weight: 2.2,
     minZoom: 10,
     labelZoom: 99,
     route: '/utility-tunnel',
@@ -206,8 +206,8 @@ export const GIS_LAYERS = [
     group: '设施点位',
     geometry: 'point',
     color: '#8E8E93',
-    minZoom: 14,
-    labelZoom: 16,
+    minZoom: 15,
+    labelZoom: 17,
     route: '/utility-tunnel',
     routeLabel: '综合管廊详情',
     fields: [
@@ -224,8 +224,7 @@ export const GIS_LAYERS = [
       if (t.includes('供水') || t.includes('给水')) return 'water'
       if (t.includes('排水') || t.includes('污水') || t.includes('废水')) return 'drain'
       return 'default'
-    },
-    pulse: true
+    }
   },
   {
     key: 'hazard',
@@ -233,8 +232,8 @@ export const GIS_LAYERS = [
     group: '风险预警',
     geometry: 'point',
     color: '#FF9500',
-    minZoom: 11,
-    labelZoom: 15,
+    minZoom: 12,
+    labelZoom: 16,
     route: '/road-hazard',
     routeLabel: '道路塌陷详情',
     fields: [
@@ -253,9 +252,9 @@ export const GIS_LAYERS = [
     label: '资产设备',
     group: '设施点位',
     geometry: 'point',
-    color: '#34C759',
-    minZoom: 12,
-    labelZoom: 16,
+    color: '#71847A',
+    minZoom: 13,
+    labelZoom: 17,
     route: '/asset',
     routeLabel: '资产管理详情',
     fields: [
@@ -277,15 +276,14 @@ export const GIS_LAYERS = [
       if (t.includes('通风') || t.includes('风机')) return 'fan'
       if (t.includes('传感')) return 'sensor'
       return 'default'
-    },
-    pulse: true
+    }
   },
   {
     key: 'alert',
     label: '预警事件',
     group: '风险预警',
     geometry: 'point',
-    color: '#5856D6',
+    color: '#D59435',
     minZoom: 10,
     labelZoom: 15,
     route: '/alerts',
