@@ -17,7 +17,28 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/platform/, '')
       },
-      // 其余 /api/**（预警/燃气/道路等）仍走网关 :8080
+      // 队友子服务直连（跳过 Java 网关 :8080），StripPrefix=2 去掉 /api/{服务名} 前缀
+      '/api/gas-asset': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/gas-asset/, '')
+      },
+      '/api/road-hazard': {
+        target: 'http://localhost:8002',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/road-hazard/, '')
+      },
+      '/api/gas-risk': {
+        target: 'http://localhost:8003',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/gas-risk/, '')
+      },
+      '/api/water-supply': {
+        target: 'http://localhost:8004',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/water-supply/, '')
+      },
+      // 其余 /api/**（预警等）仍走网关 :8080
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true

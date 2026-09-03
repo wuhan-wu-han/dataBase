@@ -38,6 +38,15 @@ DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat").strip()
 # 助手执行工具时回调本服务接口的基址（自调用）
 INTERNAL_BASE = os.environ.get("ASSISTANT_INTERNAL_BASE", "http://127.0.0.1:8000").rstrip("/")
 
+# 队友独立服务基址（各模块独立部署在不同端口，路径含 /api 前缀）
+TEAMMATE_SERVICES = {
+    "gas_asset":  os.environ.get("TEAMMATE_GAS_ASSET_BASE",  "http://127.0.0.1:8001/api").rstrip("/"),
+    "road_hazard": os.environ.get("TEAMMATE_ROAD_HAZARD_BASE", "http://127.0.0.1:8002/api").rstrip("/"),
+    "gas_risk":   os.environ.get("TEAMMATE_GAS_RISK_BASE",   "http://127.0.0.1:8003/api").rstrip("/"),
+    "water_supply": os.environ.get("TEAMMATE_WATER_SUPPLY_BASE", "http://127.0.0.1:8004/api").rstrip("/"),
+    "manhole_cover": os.environ.get("TEAMMATE_MANHOLE_COVER_BASE", "http://127.0.0.1:8005/api").rstrip("/"),
+}
+
 
 def has_key() -> bool:
     return bool(DEEPSEEK_API_KEY)
