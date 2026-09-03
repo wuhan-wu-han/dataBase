@@ -15,6 +15,13 @@ const routes = [
         meta: { title: '监控大屏' }
       },
       {
+        path: 'gis',
+        name: 'GISSituation',
+        component: () => import('@/views/gis/GISMap.vue'),
+        // fullBleed：AppLayout 内容区去掉内边距并锁定视口高度，地图铺满顶栏以下区域
+        meta: { title: '综合态势', fullBleed: true }
+      },
+      {
         path: 'alerts',
         name: 'AlertList',
         component: () => import('@/views/AlertList.vue'),

@@ -1,12 +1,34 @@
 <template>
-  <div class="layout">
+  <div class="layout" :class="{ 'is-flush': isFlush }">
     <Sidebar :collapsed="collapsed" @toggle="toggleCollapsed" />
+
+    <!-- 移动端：遮罩 + 抽屉式导航（复用同一个 Sidebar 组件，不做第二套菜单） -->
+    <transition name="fade-scrim">
+      <div v-if="mobileNav" class="layout__scrim" @click="mobileNav = false"></div>
+    </transition>
+    <transition name="slide-nav">
+      <div v-show="mobileNav" class="layout__mobilenav">
+        <Sidebar :collapsed="false" @toggle="mobileNav = false" @navigate="mobileNav = false" />
+      </div>
+    </transition>
+
     <main class="layout__main">
       <!-- 顶部玻璃栏：平台名 + 英文副标题 + 右侧信息 -->
       <header class="layout__topbar">
-        <div class="layout__brand">
-          <h1 class="layout__brand-title">安塞区城市安全生命线管网AI智慧平台</h1>
-          <p class="layout__brand-subtitle">AI-Powered Urban Lifeline Security Platform</p>
+        <div class="layout__topbar-left">
+          <!-- 移动端菜单按钮 -->
+          <button
+            class="layout__navbtn"
+            type="button"
+            aria-label="打开导航菜单"
+            @click="mobileNav = true"
+          >
+            <el-icon :size="20"><Menu /></el-icon>
+          </button>
+          <div class="layout__brand">
+            <h1 class="layout__brand-title">安塞区城市安全生命线管网AI智慧平台</h1>
+            <p class="layout__brand-subtitle">AI-Powered Urban Lifeline Security Platform</p>
+          </div>
         </div>
         <div class="layout__topbar-right">
           <!-- 当前时间 -->
@@ -48,9 +70,18 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { Clock, Monitor, WarningFilled } from '@element-plus/icons-vue'
+import { useRoute } from 'vue-router'
+import { Clock, Monitor, WarningFilled, Menu } from '@element-plus/icons-vue'
 import Sidebar from './Sidebar.vue'
 import { hasMockData, mockModules } from '@/utils/mockMode'
+
+const route = useRoute()
+
+/**
+ * 全出血页面（如 /gis 综合态势）：内容区去掉内边距、锁定视口高度，
+ * 由页面自身接管内部滚动，地图得以铺满顶栏以下的全部区域。
+ */
+const isFlush = computed(() => !!route.meta?.fullBleed)
 
 const mockLabels = computed(() => mockModules.value.map((m) => m.label).join('、'))
 
@@ -74,6 +105,11 @@ function readCollapsed() {
     return false
   }
 }
+
+// ===== 移动端抽屉导航 =====
+const mobileNav = ref(false)
+// 路由切换后自动收起，避免从抽屉点进页面后抽屉仍盖在内容上
+watch(() => route.fullPath, () => { mobileNav.value = false })
 
 // ===== 顶部时间 =====
 const currentTime = ref('')
@@ -110,6 +146,14 @@ onUnmounted(() => {
   background-color: var(--app-bg);
 }
 
+/* 全出血模式：整页锁定视口高度，滚动交给页面内部 */
+.layout.is-flush {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* 右侧主区 */
 .layout__main {
   flex: 1;
@@ -117,12 +161,18 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 }
+.layout.is-flush .layout__main {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
 
 /* 顶部栏：玻璃材质 + 平台名 + 右侧信息 */
 .layout__topbar {
   position: sticky;
   top: 0;
   z-index: 20;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -132,6 +182,34 @@ onUnmounted(() => {
   -webkit-backdrop-filter: blur(24px) saturate(1.8);
   backdrop-filter: blur(24px) saturate(1.8);
   border-bottom: 1px solid var(--app-border);
+}
+
+.layout__topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 移动端菜单按钮：桌面隐藏 */
+.layout__navbtn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--app-text-1);
+  background-color: transparent;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.layout__navbtn:hover {
+  background-color: var(--app-hover);
 }
 
 .layout__brand {
@@ -154,6 +232,9 @@ onUnmounted(() => {
   color: var(--app-text-4);
   letter-spacing: 0.04em;
   font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .layout__topbar-right {
@@ -169,6 +250,7 @@ onUnmounted(() => {
   gap: 6px;
   color: var(--app-text-3);
   font-size: 13px;
+  white-space: nowrap;
 }
 .topbar-info__text {
   font-variant-numeric: tabular-nums;
@@ -195,6 +277,7 @@ onUnmounted(() => {
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 113, 227, 0.25);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  flex-shrink: 0;
 }
 .topbar-avatar:hover {
   transform: scale(1.05);
@@ -203,6 +286,7 @@ onUnmounted(() => {
 
 /* Mock 提示条 */
 .layout__mockbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -219,6 +303,7 @@ onUnmounted(() => {
 .layout__mockbar-label {
   font-weight: 600;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .layout__mockbar-modules {
   padding: 1px 8px;
@@ -241,8 +326,124 @@ onUnmounted(() => {
 /* 内容区 */
 .layout__content {
   flex: 1;
+  min-width: 0;
   padding: 24px 32px;
   box-sizing: border-box;
   overflow-x: hidden;
+}
+.layout.is-flush .layout__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ===== 移动端导航抽屉 ===== */
+.layout__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background-color: rgba(0, 0, 0, 0.28);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+.layout__mobilenav {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 60;
+  width: 240px;
+  max-width: 82vw;
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.16);
+}
+/* 抽屉里的 Sidebar 撑满抽屉，不再自己 sticky */
+.layout__mobilenav :deep(.sidebar) {
+  width: 100%;
+  height: 100%;
+  position: static;
+  border-right: 0;
+}
+
+.fade-scrim-enter-active,
+.fade-scrim-leave-active {
+  transition: opacity 0.25s ease;
+}
+.fade-scrim-enter-from,
+.fade-scrim-leave-to {
+  opacity: 0;
+}
+.slide-nav-enter-active,
+.slide-nav-leave-active {
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.slide-nav-enter-from,
+.slide-nav-leave-to {
+  transform: translateX(-100%);
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 1024px) {
+  .layout__topbar {
+    gap: 16px;
+    padding: 14px 20px;
+  }
+  .layout__mockbar {
+    padding: 9px 20px;
+  }
+  .layout__content {
+    padding: 20px;
+  }
+  /* 这一段仍有 241px 桌面侧栏，顶栏很紧：先收起时间/在线设备数与英文副标题，
+     否则平台标题会被省略号截到只剩一百多像素 */
+  .layout__topbar-right .topbar-info {
+    display: none;
+  }
+  .layout__brand-subtitle {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  /* 隐藏固定桌面侧栏，改用抽屉导航 */
+  .layout > .sidebar {
+    display: none;
+  }
+  .layout__navbtn {
+    display: inline-flex;
+  }
+  .layout__topbar {
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  .layout__brand-title {
+    font-size: 14px;
+    white-space: normal;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .layout__brand-subtitle {
+    display: none;
+  }
+  .layout__topbar-right {
+    gap: 10px;
+  }
+  /* 窄屏顶栏只保留头像，时间/在线设备数不再挤占标题空间 */
+  .layout__topbar-right .topbar-info {
+    display: none;
+  }
+  .layout__mockbar {
+    padding: 8px 14px;
+    font-size: 12px;
+    gap: 6px;
+  }
+  .layout__mockbar-hint {
+    display: none;
+  }
+  .layout__content {
+    padding: 14px;
+  }
 }
 </style>
