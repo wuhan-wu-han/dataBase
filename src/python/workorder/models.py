@@ -239,6 +239,21 @@ class OrderCreateRequest(BaseModel):
     priority: str = "medium"
     location: Optional[str] = None
     description: Optional[str] = None
+    reporter: Optional[str] = None
+    sla_hours: Optional[int] = None
+    order_id: Optional[str] = None          # 前端「编辑」复用新增接口时携带
+
+
+class OrderUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    channel: Optional[str] = None
+    category: Optional[str] = None
+    priority: Optional[str] = None
+    location: Optional[str] = None
+    description: Optional[str] = None
+    reporter: Optional[str] = None
+    required_skill: Optional[str] = None
+    sla_hours: Optional[int] = None
 
 
 class DispatchAssignRequest(BaseModel):

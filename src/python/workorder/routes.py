@@ -17,6 +17,7 @@ from .models import (
     DispatchAssignRequest,
     OrderCreateRequest,
     OrderQueryRequest,
+    OrderUpdateRequest,
     ProcessAdvanceRequest,
     to_dict,
 )
@@ -37,11 +38,13 @@ def workorder_overview():
 # 工单管理（多渠道接入）
 # ==============================================================================
 
-@router.get("/orders", summary="工单列表查询")
+@router.get("/orders", summary="工单列表查询（支持过滤 + 分页）")
 def list_orders(channel: Optional[str] = None,
                 status: Optional[str] = None,
                 priority: Optional[str] = None,
-                location: Optional[str] = None):
+                location: Optional[str] = None,
+                page: int = Query(1, ge=1),
+                page_size: int = Query(0, ge=0, le=1000)):
     filters = {}
     if channel:
         filters["channel"] = channel
@@ -51,8 +54,8 @@ def list_orders(channel: Optional[str] = None,
         filters["priority"] = priority
     if location:
         filters["location"] = location
-    orders = simulator.list_orders(filters if filters else None)
-    return {"orders": orders, "total": len(orders)}
+    return simulator.query_orders(filters if filters else None,
+                                  page=page, page_size=page_size)
 
 
 @router.get("/orders/stats", summary="工单统计（渠道/状态/优先级/趋势）")
@@ -66,10 +69,12 @@ def list_channels():
             "categories": [{"key": k, **v} for k, v in ORDER_CATEGORIES.items()]}
 
 
-@router.post("/orders", summary="新建工单（多渠道接入）")
+@router.post("/orders", summary="新建工单（携带 order_id 时视为编辑）")
 def create_order(req: OrderCreateRequest):
     data = to_dict(req)
     try:
+        if data.get("order_id"):
+            return simulator.update_order(data["order_id"], data)
         return simulator.create_order(
             title=data.get("title") or "",
             channel=data.get("channel") or "user",
@@ -77,9 +82,28 @@ def create_order(req: OrderCreateRequest):
             priority=data.get("priority") or "medium",
             location=data.get("location"),
             description=data.get("description"),
+            reporter=data.get("reporter"),
+            sla_hours=data.get("sla_hours"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.put("/orders/{order_id}", summary="编辑工单")
+def update_order(order_id: str, req: OrderUpdateRequest):
+    try:
+        return simulator.update_order(order_id, to_dict(req))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.delete("/orders/{order_id}", summary="删除工单")
+def delete_order(order_id: str):
+    try:
+        simulator.delete_order(order_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"success": True, "code": 200, "message": "工单已删除", "order_id": order_id}
 
 
 @router.get("/orders/{order_id}", summary="工单详情")

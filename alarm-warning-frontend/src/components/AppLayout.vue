@@ -26,6 +26,14 @@
         </div>
       </header>
 
+      <!-- Mock 提示条：任一模块接口未连通时显示，避免演示数据被误认为真实数据 -->
+      <div v-if="hasMockData" class="layout__mockbar">
+        <el-icon :size="15"><WarningFilled /></el-icon>
+        <span class="layout__mockbar-label">当前使用演示数据（Mock）</span>
+        <span class="layout__mockbar-modules">{{ mockLabels }}</span>
+        <span class="layout__mockbar-hint">该模块接口未连通，数据非真实后端数据</span>
+      </div>
+
       <!-- 内容区：Vue Transition 淡入淡出 300ms -->
       <div class="layout__content">
         <router-view v-slot="{ Component }">
@@ -39,9 +47,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { Clock, Monitor } from '@element-plus/icons-vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { Clock, Monitor, WarningFilled } from '@element-plus/icons-vue'
 import Sidebar from './Sidebar.vue'
+import { hasMockData, mockModules } from '@/utils/mockMode'
+
+const mockLabels = computed(() => mockModules.value.map((m) => m.label).join('、'))
 
 // 折叠状态持久化 key
 const STORAGE_KEY = 'app_sidebar_collapsed'
@@ -188,6 +199,43 @@ onUnmounted(() => {
 .topbar-avatar:hover {
   transform: scale(1.05);
   box-shadow: 0 4px 14px rgba(0, 113, 227, 0.35);
+}
+
+/* Mock 提示条 */
+.layout__mockbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 32px;
+  font-size: 13px;
+  color: #8A5A00;
+  background-color: rgba(255, 149, 0, 0.12);
+  border-bottom: 1px solid rgba(255, 149, 0, 0.24);
+}
+.layout__mockbar :deep(.el-icon) {
+  color: var(--app-color-orange);
+  flex-shrink: 0;
+}
+.layout__mockbar-label {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.layout__mockbar-modules {
+  padding: 1px 8px;
+  border-radius: var(--app-radius-tag);
+  background-color: rgba(255, 149, 0, 0.18);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.layout__mockbar-hint {
+  color: var(--app-text-4);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 内容区 */

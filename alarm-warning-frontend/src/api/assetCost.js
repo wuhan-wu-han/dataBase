@@ -1,4 +1,5 @@
 import { createModuleHttp, MODULE_PREFIX } from './gateway'
+import { createMockFallback } from '@/utils/mockMode'
 import mock from '@/mock/assetCost'
 
 const http = createModuleHttp(MODULE_PREFIX.platform, { silentErrors: true })
@@ -6,8 +7,8 @@ const http = createModuleHttp(MODULE_PREFIX.platform, { silentErrors: true })
 const get = (url, params) => http.get(url, { params })
 const send = (method, url, body, config) => http.request({ method, url, data: body, ...(config || {}) })
 
-const fallback = (promise, mockValue) =>
-  Promise.resolve(promise).catch(() => (typeof mockValue === 'function' ? mockValue() : mockValue))
+// TODO(第二阶段): 后端接入真实数据库后删除 fallback 与 @/mock/assetCost
+const fallback = createMockFallback('assetCost', '资产全生命周期成本')
 
 const ok = () => ({ success: true, code: 200, message: 'ok' })
 const pickAsset = (id) =>
