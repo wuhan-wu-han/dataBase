@@ -31,6 +31,10 @@
           <el-option label="全部区域" value="" />
           <el-option v-for="a in areaOptions" :key="a" :label="a" :value="a" />
         </el-select>
+        <el-select v-model="riskFilter" class="gis-toolbar__select" placeholder="风险等级">
+          <el-option label="全部风险等级" value="" />
+          <el-option v-for="r in RISK_OPTIONS" :key="r.value" :label="r.label" :value="r.value" />
+        </el-select>
         <el-select v-model="statusFilter" class="gis-toolbar__select" placeholder="状态筛选">
           <el-option label="全部状态" value="" />
           <el-option v-for="s in STATUS_OPTIONS" :key="s.value" :label="s.label" :value="s.value" />
@@ -44,7 +48,7 @@
       </div>
 
       <div class="gis-toolbar__meta">
-        <span class="gis-meta__item">数据来源：{{ sourceSummary }}</span>
+        <span class="gis-meta__item">安塞区城市生命线安全监测</span>
         <span class="gis-meta__divider"></span>
         <span class="gis-meta__item">最后刷新 {{ updatedAt || '--:--:--' }}</span>
       </div>
@@ -196,13 +200,13 @@
         <!-- 空数据态 -->
         <div v-else-if="!loading && totalFeatures === 0" class="gis-state">
           <el-icon :size="20"><Aim /></el-icon>
-          <span>真实接口暂无可定位要素</span>
+          <span>当前筛选条件下没有可定位的要素</span>
           <el-button size="small" plain @click="resetFilters">重置筛选</el-button>
         </div>
 
         <div v-else-if="!loading && anseiPointCount === 0" class="gis-state gis-state--notice">
           <el-icon :size="18"><Aim /></el-icon>
-          <span>当前接口未返回安塞区范围内的风险或设备坐标</span>
+          <span>安塞区范围内暂无风险或设备坐标</span>
         </div>
 
         <!-- 左下角图例：管线类型 + 风险等级 两张卡片 -->
@@ -322,6 +326,12 @@
           <el-option v-for="a in areaOptions" :key="a" :label="a" :value="a" />
         </el-select>
 
+        <label class="gis-filter-sheet__label">风险等级</label>
+        <el-select v-model="riskFilter" placeholder="全部风险等级">
+          <el-option label="全部风险等级" value="" />
+          <el-option v-for="r in RISK_OPTIONS" :key="r.value" :label="r.label" :value="r.value" />
+        </el-select>
+
         <label class="gis-filter-sheet__label">状态</label>
         <el-select v-model="statusFilter" placeholder="全部状态">
           <el-option label="全部状态" value="" />
@@ -352,9 +362,9 @@ import GISMetrics from './GISMetrics.vue'
 import { fetchAllLayers } from '@/api/gis'
 import {
   GIS_LAYERS, LAYER_MAP, ANSAI_CENTER, ANSAI_BOUNDS,
-  AREAS, STATUS_OPTIONS, RISK_LEVELS, riskLevelOf, toneColor
+  AREAS, STATUS_OPTIONS, RISK_LEVELS, RISK_OPTIONS, riskLevelOf, toneColor
 } from '@/config/gisLayers'
-import { waitBMap, buildMarkerIcon } from '@/utils/baidumap'
+import { waitBMap, buildMarkerIcon, buildClusterIcon, buildDotIcon } from '@/utils/baidumap'
 import { searchPlace as backendSearchPlace, convertCoords, planDriving as backendPlanDriving } from '@/api/baiduMap'
 
 const router = useRouter()
@@ -372,6 +382,7 @@ const updatedAt = ref('')
 const keyword = ref('')
 const appliedKeyword = ref('')
 const areaFilter = ref('')
+const riskFilter = ref('')
 const statusFilter = ref('')
 
 const panelCollapsed = ref(false)
@@ -402,15 +413,12 @@ const visible = reactive(Object.fromEntries(GIS_LAYERS.map((l) => [l.key, l.geom
 const counts = reactive(Object.fromEntries(GIS_LAYERS.map((l) => [l.key, 0])))
 const sources = reactive({})
 const records = reactive({})
+/** 数据通道附带的汇总口径（演示模式来自 GIS_DEMO_DATA.summary，真实接口为 null）。 */
+const demoSummary = ref(null)
 
 // ---------------------------------------------------------------------------
 // 百度地图运行时对象（非响应式）
 // ---------------------------------------------------------------------------
-
-// BMap.Icon 必须传一个有效的图片 URL 作为占位（不能传空字符串），
-// 内部通过 _html 注入 DOM 样式覆盖掉图片显示。
-// 1x1 透明 GIF 是百度 DOM Icon 的标准做法。
-const TRANSPARENT_GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
 let BMap = null               // 百度地图 SDK 命名空间
 let map = null                // BMap.Map 实例
@@ -490,7 +498,7 @@ function fitToAnsei(maxZoom = 14) {
   const paddedBounds = new BMap.Bounds(sw, ne)
 
   try {
-    map.setViewport(paddedBounds, { zoomFactor: -1, enableAnimation: true })
+    map.setViewport(paddedBounds, { zoomFactor: 0, enableAnimation: true })
     const currentZoom = map.getZoom()
     if (currentZoom > maxZoom) {
       map.setZoom(maxZoom)
@@ -548,14 +556,6 @@ const anseiPointCount = computed(() => ['alert', 'hazard', 'asset', 'manhole'].r
   return sum + count
 }, 0))
 
-const sourceSummary = computed(() => {
-  const list = Object.values(sources)
-  if (list.length === 0) return '加载中'
-  const available = list.filter((s) => s.available).length
-  const usable = list.reduce((sum, s) => sum + Number(s.usable || 0), 0)
-  return `真实接口 ${available}/${list.length} · 可定位 ${usable}`
-})
-
 const areaOptions = computed(() => {
   const dynamic = GIS_LAYERS.flatMap((cfg) =>
     (collections[cfg.key]?.features || []).map((feature) => feature.properties?._area).filter(Boolean)
@@ -610,7 +610,7 @@ const detailRows = computed(() => {
 })
 
 // ---------------------------------------------------------------------------
-// 右侧业务态势与底部指标（全部由当前真实接口记录派生）
+// 右侧业务态势与底部指标（全部由当前数据通道的记录与汇总派生）
 // ---------------------------------------------------------------------------
 function identityOf(item) {
   return String(
@@ -689,6 +689,20 @@ const riskDistribution = computed(() => {
 })
 
 const deviceOnline = computed(() => {
+  // 演示通道带回了统一配置的设备总量口径，优先使用，避免在模板里硬编码数字。
+  const summary = demoSummary.value
+  const summaryTotal = Number(summary?.deviceTotal)
+  if (Number.isFinite(summaryTotal) && summaryTotal > 0) {
+    const online = Number(summary.deviceOnline) || 0
+    return {
+      available: true,
+      rate: Math.round(online / summaryTotal * 1000) / 10,
+      online,
+      total: summaryTotal,
+      hasHistory: false
+    }
+  }
+
   const items = [...(records.asset || []), ...(records.manhole || [])]
   const withOnlineStatus = items
     .map((item) => item.online_status ?? item.onlineStatus ?? item.is_online ?? item.isOnline)
@@ -719,6 +733,24 @@ function sumNumeric(items, keys) {
 }
 
 const metricItems = computed(() => {
+  // 演示口径：设备总量与工单数取自统一配置，预警与高风险数仍由同一份数据实时算出。
+  // 注意两处统计口径不同：环形图统计「预警事件 + 风险点」两类要素，
+  // 指标卡只统计风险点，因此卡片备注明确写"风险点"，避免被误读成与环形图矛盾。
+  const summary = demoSummary.value
+  if (Number(summary?.deviceTotal) > 0) {
+    const highRisk = (records.hazard || []).reduce(
+      (sum, item) => sum + (riskLevelOf(item) === 'high' ? 1 : 0),
+      0
+    )
+    return [
+      { key: 'device-total', label: '设备总数', value: summary.deviceTotal, unit: '台', note: `在线 ${summary.deviceOnline ?? 0} 台`, icon: 'device', tone: 'blue' },
+      { key: 'today-alert', label: '今日预警', value: todayAlarmCount.value, unit: '起', note: '按事件时间统计', icon: 'alarm', tone: 'orange' },
+      { key: 'high-risk', label: '高风险', value: highRisk, unit: '处', note: '风险等级为高的风险点', icon: 'risk', tone: highRisk ? 'red' : 'green' },
+      { key: 'today-order', label: '今日工单', value: summary.todayWorkOrders ?? 0, unit: '单', note: '今日新增处置工单', icon: 'point', tone: 'blue' },
+      { key: 'processing-order', label: '处理中工单', value: summary.processingWorkOrders ?? 0, unit: '单', note: '尚未闭环处置', icon: 'alarm', tone: summary.processingWorkOrders ? 'orange' : 'green' }
+    ]
+  }
+
   const pipelineLengthM = sumNumeric(records.asset, ['length_m', 'lengthM'])
   const facilities = (records.asset?.length || 0) + (records.manhole?.length || 0)
   const risks = (records.hazard?.length || 0)
@@ -727,11 +759,11 @@ const metricItems = computed(() => {
     return !['closed', 'resolved', '已关闭', '已处理', '已闭环'].some((value) => status.includes(value))
   }).length
   return [
-    { key: 'length', label: '管线资产总长', value: pipelineLengthM ? (pipelineLengthM / 1000).toFixed(1) : '0', unit: 'km', note: '资产台账 length_m 汇总', icon: 'pipeline', tone: 'blue' },
-    { key: 'facility', label: '设施记录', value: facilities, unit: '处', note: '资产与井盖真实记录', icon: 'device', tone: 'green' },
+    { key: 'length', label: '管线资产总长', value: pipelineLengthM ? (pipelineLengthM / 1000).toFixed(1) : '0', unit: 'km', note: '资产台账管段长度汇总', icon: 'pipeline', tone: 'blue' },
+    { key: 'facility', label: '设施记录', value: facilities, unit: '处', note: '资产设备与智能井盖', icon: 'device', tone: 'green' },
     { key: 'today-alert', label: '今日预警', value: todayAlarmCount.value, unit: '起', note: '按事件时间统计', icon: 'alarm', tone: 'orange' },
-    { key: 'active-alert', label: '未闭环预警', value: activeAlerts, unit: '起', note: '按接口处置状态统计', icon: 'alarm', tone: activeAlerts ? 'red' : 'green' },
-    { key: 'risk', label: '风险记录', value: risks, unit: '处', note: '道路风险接口记录', icon: 'risk', tone: risks ? 'orange' : 'blue' }
+    { key: 'active-alert', label: '未闭环预警', value: activeAlerts, unit: '起', note: '按处置状态统计', icon: 'alarm', tone: activeAlerts ? 'red' : 'green' },
+    { key: 'risk', label: '风险记录', value: risks, unit: '处', note: '道路塌陷风险点位', icon: 'risk', tone: risks ? 'orange' : 'blue' }
   ]
 })
 
@@ -785,6 +817,7 @@ async function createMap() {
     renderClusters()
     renderNetworkNodes()
     updateLineWeights()
+    updateHighlightRing()
   })
 
   for (const cfg of GIS_LAYERS) {
@@ -798,6 +831,7 @@ async function createMap() {
 // ---------------------------------------------------------------------------
 function passesFilter(props) {
   if (areaFilter.value && props._area !== areaFilter.value) return false
+  if (riskFilter.value && props._risk !== riskFilter.value) return false
   if (statusFilter.value && props._status !== statusFilter.value) return false
   const kw = appliedKeyword.value.trim().toLowerCase()
   if (kw && !props._search.includes(kw)) return false
@@ -891,6 +925,26 @@ function getMarkerVisual(cfg, props) {
   const risk = props._risk || 'normal'
   const size = { high: 14, elevated: 12, medium: 10, low: 9, normal: 7 }[risk] || 7
   return { size }
+}
+
+/**
+ * BMap.Circle 的半径单位是墨卡托米，屏幕上 1 像素 = 2^(18 - zoom) 米，
+ * 所以高亮圈必须按当前缩放级别把"期望像素半径"换算成米。
+ * 直接用图标像素尺寸当半径的话，zoom 13 下 22 米还不到 1 像素，选中点位等于没有高亮。
+ */
+function highlightRingRadius(cfg, props) {
+  const px = getMarkerVisual(cfg, props).size / 2 + 8
+  const zoom = map ? map.getZoom() : 13
+  return px * Math.pow(2, 18 - zoom)
+}
+
+/** 缩放后重算高亮圈半径，让它始终保持恒定的屏幕像素大小 */
+function updateHighlightRing() {
+  const sel = selected.value
+  if (!selectedOverlay || !sel || sel.cfg?.geometry !== 'point') return
+  try {
+    selectedOverlay.setRadius?.(highlightRingRadius(sel.cfg, sel.properties))
+  } catch { /* noop */ }
 }
 
 function itemOverlays(item) {
@@ -1004,14 +1058,12 @@ function buildPoint(cfg, feature, bdLon, bdLat) {
   const bdPoint = new BMap.Point(bdLon, bdLat)
 
   const iconOpts = buildMarkerIcon(cfg, feature.properties)
-  // 必须用一个有效的图片 URL（1x1 透明 GIF data URL），不能传空字符串
-  // BMap v3.0 内部会 new Image() 加载它，空字符串会导致 initialize 时读 width 报错
-  const TRANSPARENT_GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
-  const icon = new BMap.Icon(TRANSPARENT_GIF, new BMap.Size(iconOpts.width, iconOpts.height), {
+  // BMap v3.0 的 Icon 只渲染图片地址（内部 new Image()），不支持注入 DOM，
+  // 因此图标统一由 buildMarkerIcon 画成 SVG 再以 data URI 传入。
+  const icon = new BMap.Icon(iconOpts.url, new BMap.Size(iconOpts.width, iconOpts.height), {
     anchor: new BMap.Size(iconOpts.anchor.x, iconOpts.anchor.y),
     imageSize: new BMap.Size(iconOpts.width, iconOpts.height)
   })
-  icon._html = iconOpts.innerHTML
 
   const marker = new BMap.Marker(bdPoint, { icon })
   marker.setTitle(feature.properties._title || '')
@@ -1176,11 +1228,11 @@ function applyZoomVisibility() {
 function shouldShowFeatureAtZoom(cfg, feature, zoom) {
   const status = feature.properties._status || 'normal'
   if (cfg.geometry === 'line') return zoom >= 12 || isTrunkPipeline(feature.properties)
-  if (zoom <= 12) return false
-  if (cfg.key === 'alert' || cfg.key === 'hazard') return zoom >= 15 || status !== 'normal'
-  if (cfg.key === 'asset') return zoom >= 15 || (zoom >= 13 && status !== 'normal')
-  if (cfg.key === 'manhole') return zoom >= 16 || (zoom >= 15 && status === 'danger')
-  return zoom >= cfg.minZoom
+  // 10 级及以下交给聚合气泡表达，避免小比例尺下点位糊成一片；
+  // 11 级起风险点、预警点、设备点全部单独显示，保证进入页面即可看到业务点位。
+  if (zoom <= 10) return false
+  if (cfg.key === 'manhole') return zoom >= 13 || status !== 'normal'
+  return true
 }
 
 /** 低缩放级别：风险/预警聚合 */
@@ -1189,9 +1241,9 @@ function renderClusters() {
   for (const m of clusterMarkers) { try { map.removeOverlay(m) } catch { /* noop */ } }
   clusterMarkers = []
   const zoom = map.getZoom()
-  if (zoom > 12) return
+  if (zoom > 10) return
 
-  const cellSize = zoom <= 10 ? 88 : 70
+  const cellSize = zoom <= 9 ? 88 : 70
   const buckets = new Map()
   for (const key of ['hazard', 'alert']) {
     if (!visible[key]) continue
@@ -1212,20 +1264,16 @@ function renderClusters() {
     }
   }
 
-  // 注入聚合样式（首次）
-  ensureClusterStyles()
-
   for (const bucket of buckets.values()) {
     const count = bucket.items.length
     const lat = bucket.lat / count
     const lng = bucket.lng / count
-    const size = 28 + Math.min(8, count * 1.5)
 
-    const icon = new BMap.Icon(TRANSPARENT_GIF, new BMap.Size(size, size), {
-      anchor: new BMap.Size(size / 2, size / 2),
-      imageSize: new BMap.Size(size, size)
+    const iconOpts = buildClusterIcon(count, bucket.danger)
+    const icon = new BMap.Icon(iconOpts.url, new BMap.Size(iconOpts.width, iconOpts.height), {
+      anchor: new BMap.Size(iconOpts.anchor.x, iconOpts.anchor.y),
+      imageSize: new BMap.Size(iconOpts.width, iconOpts.height)
     })
-    icon._html = `<span class="gis-cluster${bucket.danger ? ' is-danger' : ''}">${count}</span>`
 
     const marker = new BMap.Marker(new BMap.Point(lng, lat), { icon })
     marker.setTitle(`${count} 个风险/预警点，点击放大查看`)
@@ -1241,27 +1289,6 @@ function renderClusters() {
     map.addOverlay(marker)
     clusterMarkers.push(marker)
   }
-}
-
-let clusterStylesInjected = false
-function ensureClusterStyles() {
-  if (clusterStylesInjected) return
-  clusterStylesInjected = true
-  const style = document.createElement('style')
-  style.setAttribute('data-bmap-gis', 'cluster-styles')
-  style.textContent = `
-    .gis-cluster {
-      display: flex; align-items: center; justify-content: center;
-      box-sizing: border-box; width: 100%; height: 100%;
-      font-family: inherit; font-size: 11px; font-weight: 700; color: #6B4B1D;
-      background: rgba(229,182,94,0.84);
-      border: 2px solid rgba(255,255,255,0.92);
-      border-radius: 50%;
-      box-shadow: 0 2px 8px rgba(77,63,38,0.2);
-    }
-    .gis-cluster.is-danger { color: #fff; background: rgba(190,69,62,0.86); box-shadow: 0 2px 8px rgba(122,45,40,0.24); }
-  `
-  document.head.appendChild(style)
 }
 
 /** 高缩放级别显示网络节点（管线端点/转折点） */
@@ -1381,7 +1408,7 @@ function openFeatureInfoWindow(cfg, feature, coords) {
       return `<div class="gis-popup__row"><span>${escapeHtml(field.label)}</span><b>${escapeHtml(value)}${field.unit ? ` ${escapeHtml(field.unit)}` : ''}</b></div>`
     })
     .filter(Boolean)
-    .slice(0, 5)
+    .slice(0, 7)
   const rawCoords = props._coords
   if (Array.isArray(rawCoords)) {
     rows.push(`<div class="gis-popup__row"><span>坐标</span><b>${Number(rawCoords[0]).toFixed(5)}, ${Number(rawCoords[1]).toFixed(5)}</b></div>`)
@@ -1436,7 +1463,7 @@ function selectFeature(cfg, feature, overlay, coords) {
     highlightOverlay = overlay
     const [lng, lat] = pointCoords
     try { overlay.setTop?.(true) } catch { /* noop */ }
-    selectedOverlay = new BMap.Circle(new BMap.Point(lng, lat), getMarkerVisual(cfg, props).size + 8, {
+    selectedOverlay = new BMap.Circle(new BMap.Point(lng, lat), highlightRingRadius(cfg, props), {
       strokeColor: '#315B78',
       strokeWeight: 2,
       strokeOpacity: 0.72,
@@ -1460,20 +1487,32 @@ function clearHighlight() {
   highlightOverlay = null
 }
 
-function locateAlarm(alarm) {
+async function locateAlarm(alarm) {
   if (!alarm?.feature) {
-    ElMessage.warning('该告警接口未提供坐标，也没有匹配到真实设备点位')
+    ElMessage.warning('该预警暂无可关联的坐标信息')
     return
   }
   const cfg = LAYER_MAP.alert
-  const item = overlayMap.alert?.find((entry) => entry.feature === alarm.feature)
+  const findItem = () => overlayMap.alert?.find((entry) => entry.feature === alarm.feature)
+  let item = findItem()
+  if (!item) {
+    // 右侧预警列表来自全量记录，目标可能被当前筛选条件排除；先恢复全量再定位。
+    keyword.value = ''
+    appliedKeyword.value = ''
+    areaFilter.value = ''
+    riskFilter.value = ''
+    statusFilter.value = ''
+    await renderAll()
+    item = findItem()
+  }
   if (!item?.bdCoords) {
-    ElMessage.warning('该告警暂时无法定位')
+    ElMessage.warning('该预警暂时无法定位')
     return
   }
   visible.alert = true
-  applyZoomVisibility()
+  // 先定位再刷新显隐：zoomend 是异步触发的，顺序颠倒会用旧缩放级别把目标 Marker 判为隐藏。
   map.centerAndZoom(new BMap.Point(item.bdCoords[0], item.bdCoords[1]), 16)
+  applyZoomVisibility()
   selectFeature(cfg, alarm.feature, item.overlay, item.bdCoords)
 }
 
@@ -1509,6 +1548,7 @@ async function reload() {
     Object.assign(records, result.records)
     for (const key of Object.keys(sources)) delete sources[key]
     Object.assign(sources, result.sources)
+    demoSummary.value = result.summary || null
     updatedAt.value = formatTime(result.loadedAt)
     clearHighlight()
     selected.value = null
@@ -1556,11 +1596,11 @@ async function onSearch() {
         map.centerAndZoom(point, 16)
 
         // 临时标记 POI 位置
-        const icon = new BMap.Icon(TRANSPARENT_GIF, new BMap.Size(24, 24), {
-          anchor: new BMap.Size(12, 24),
-          imageSize: new BMap.Size(24, 24)
+        const iconOpts = buildDotIcon()
+        const icon = new BMap.Icon(iconOpts.url, new BMap.Size(iconOpts.width, iconOpts.height), {
+          anchor: new BMap.Size(iconOpts.anchor.x, iconOpts.anchor.y),
+          imageSize: new BMap.Size(iconOpts.width, iconOpts.height)
         })
-        icon._html = `<div style="width:24px;height:24px;background:#1A73E8;border:2px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.2);"></div>`
         const poiMarker = new BMap.Marker(point, { icon })
         poiMarker.setTitle(`${poi.name}\n${poi.address}`)
         map.addOverlay(poiMarker)
@@ -1646,6 +1686,7 @@ function resetFilters() {
   keyword.value = ''
   appliedKeyword.value = ''
   areaFilter.value = ''
+  riskFilter.value = ''
   statusFilter.value = ''
 }
 
@@ -1804,7 +1845,7 @@ watch(visible, () => {
   renderNetworkNodes()
 })
 
-watch([areaFilter, statusFilter, appliedKeyword], async () => {
+watch([areaFilter, riskFilter, statusFilter, appliedKeyword], async () => {
   if (!map) return
   await renderAll()
 })

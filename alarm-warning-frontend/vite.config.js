@@ -11,16 +11,23 @@ export default defineConfig({
     // 开发环境统一通过 api-gateway:8080 转发到各子服务
     // 生产环境由 Nginx 反向代理实现，前端使用相对路径 /api/...
     proxy: {
-      // 认证服务独立开发端口；容器部署时由 Nginx 转发至 platform-api:8000
+      // 认证路由由 Python 综合服务(:8000)提供；容器部署时由 Nginx 转发至 platform-api:8000
       '/auth': {
-        target: process.env.VITE_AUTH_TARGET || 'http://127.0.0.1:18001',
+        target: process.env.VITE_AUTH_TARGET || 'http://127.0.0.1:8000',
         changeOrigin: true
       },
-      // 本地开发：/api/platform/** 直连 Python 综合服务(:8000)，
-      // 后端已注册 /api/platform 前缀，Vite 代理直接透传，无需 rewrite
-      '/api/platform': {
+      // baidu 路由是 :8000 上唯一挂在 /api/platform 前缀下的，直接透传
+      '/api/platform/baidu': {
         target: 'http://localhost:8000',
         changeOrigin: true
+      },
+      // 本地开发：/api/platform/** 直连 Python 综合服务(:8000)。
+      // 除 baidu 外该服务的路由都挂在根路径（/hazmat、/governance、/asset-cost…），
+      // 与网关 StripPrefix=2 一致，这里同样剥掉 /api/platform 前缀再转发。
+      '/api/platform': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/platform/, '')
       },
       // 市政井盖管控：直连 8005，去掉 /api/manhole-cover 前缀
       '/api/manhole-cover': {
@@ -49,11 +56,6 @@ export default defineConfig({
         target: 'http://localhost:8003',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/gas-risk/, '')
-      },
-      '/api/water-supply': {
-        target: 'http://localhost:8004',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/water-supply/, '')
       },
       // 其余 /api/**（预警等）仍走网关 :8080
       '/api': {

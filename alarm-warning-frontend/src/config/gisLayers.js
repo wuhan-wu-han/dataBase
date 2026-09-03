@@ -58,6 +58,14 @@ export const STATUS_OPTIONS = [
   { value: 'danger', label: '高风险' }
 ]
 
+/** 风险等级筛选项，顺序与 RISK_LEVELS 一致。 */
+export const RISK_OPTIONS = [
+  { value: 'high', label: '高风险' },
+  { value: 'elevated', label: '较高风险' },
+  { value: 'medium', label: '中风险' },
+  { value: 'low', label: '低风险' }
+]
+
 /** 地图点位与右侧统计共用的四级风险色；正常设备单独使用 normal。 */
 export const RISK_LEVELS = {
   high: { key: 'high', label: '高风险', color: '#C9433B' },
@@ -74,7 +82,9 @@ export function riskLevelOf(item, fallbackStatus = 'normal') {
     item?.risk_level ?? item?.riskLevel ?? item?.level ?? ''
   ).trim().toLowerCase()
   if (raw.includes('red') || raw.includes('红') || raw.includes('severe') || raw.includes('极高')) return 'high'
-  if (raw.includes('orange') || raw.includes('橙') || raw === '高' || raw.includes('高风险')) return 'elevated'
+  // 「较高风险」包含子串「高风险」，必须先判较高再判高，否则高风险会被误归为橙色。
+  if (raw.includes('orange') || raw.includes('橙') || raw.includes('较高')) return 'elevated'
+  if (raw === '高' || raw.includes('高风险')) return 'high'
   if (raw.includes('yellow') || raw.includes('黄') || raw === '中' || raw.includes('中风险')) return 'medium'
   if (raw.includes('blue') || raw.includes('蓝') || raw === '低' || raw.includes('低风险')) return 'low'
   if (fallbackStatus === 'danger') return 'high'
@@ -321,11 +331,12 @@ export const GIS_LAYERS = [
       { label: '预警编号', prop: ['id', 'alertEventCode', 'alert_event_code'] },
       { label: '预警级别', prop: ['warning_label', 'warningLabel', 'alertLevel'], tone: true },
       { label: '设备编号', prop: ['device_id', 'deviceId'] },
-      { label: '设备类型', prop: ['device_type', 'deviceType'] },
       { label: '所属区域', prop: ['area_id', 'areaId'] },
-      { label: '事件描述', prop: ['description', 'alertContent', 'rootCauseDesc', 'root_cause_desc'] },
+      { label: '监测值', prop: ['monitor_value', 'monitorValue'], tone: true },
       { label: '处置状态', prop: ['alertStatus', 'alert_status', 'status'], tone: true },
-      { label: '发生时间', prop: ['event_time', 'eventTime', 'eventTimestamp'] }
+      { label: '发生时间', prop: ['event_time', 'eventTime', 'eventTimestamp'] },
+      { label: '设备类型', prop: ['device_type', 'deviceType'] },
+      { label: '事件描述', prop: ['description', 'alertContent', 'rootCauseDesc', 'root_cause_desc'] }
     ],
     titleOf: (p) => p.description || p.alertContent || p.rootCauseDesc || p.root_cause_desc || p.warning_label || p.warningLabel || p.alertEventCode || p.alert_event_code || p.id || '预警事件',
     statusOf: (p) => alertStatusOf(p.warning_level ?? p.warningLevel ?? p.alertLevel),

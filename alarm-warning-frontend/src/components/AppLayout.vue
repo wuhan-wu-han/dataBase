@@ -53,8 +53,8 @@
         </div>
       </header>
 
-      <!-- Mock 提示条：任一模块接口未连通时显示，避免演示数据被误认为真实数据 -->
-      <div v-if="hasMockData" class="layout__mockbar">
+      <!-- Mock 提示条：任一模块接口未连通时显示；综合态势页是对外演示主页面，不展示联调提示 -->
+      <div v-if="hasMockData && !isDemoShowcasePage" class="layout__mockbar">
         <el-icon :size="15"><WarningFilled /></el-icon>
         <span class="layout__mockbar-label">当前使用演示数据（Mock）</span>
         <span class="layout__mockbar-modules">{{ mockLabels }}</span>
@@ -117,6 +117,9 @@ async function submitPassword() {
 const isFlush = computed(() => !!route.meta?.fullBleed)
 
 const mockLabels = computed(() => mockModules.value.map((m) => m.label).join('、'))
+
+/** 综合态势页是对外演示主画面，联调期的 Mock 提示条不在该页展示。 */
+const isDemoShowcasePage = computed(() => route.name === 'GISSituation')
 
 // 折叠状态持久化 key
 const STORAGE_KEY = 'app_sidebar_collapsed'

@@ -30,7 +30,7 @@
         <span class="gis-legend-dot" :style="{ background: RISK_LEVELS[key].color }"></span>
         <span class="gis-legend-text">{{ RISK_LEVELS[key].label }}</span>
       </div>
-      <p class="gis-layers__hint">缩放地图可分级显示：井盖、设备点位在高缩放级别出现。</p>
+      <p class="gis-layers__hint">缩小到全域视图时风险与预警点位会聚合，放大后展开为单点；智能井盖在更大比例尺下显示。</p>
     </section>
   </div>
 </template>

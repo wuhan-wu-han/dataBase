@@ -3,7 +3,7 @@
  *
  * 本模块只处理浏览器端的地图渲染相关：
  * - waitBMap: 等待 BMap SDK 加载完成
- * - buildMarkerIcon / ensureMarkerStyles: 动态构造 Marker 的 DOM icon
+ * - buildMarkerIcon / buildClusterIcon: 生成 Marker 的 SVG data URI 图标
  * - OverlayGroup: 覆盖物分组容器
  *
  * 坐标转换、POI 搜索、路线规划等**数据获取类**功能已全部移到后端：
@@ -39,87 +39,79 @@ export function waitBMap(timeout = BMAP_LOAD_TIMEOUT) {
 }
 
 // ---------------------------------------------------------------------------
-// 自定义覆盖物：点位 Marker（divIcon 风格，带动态样式注入）
+// Marker 图标：SVG data URI
+//
+// BMap v3.0 的 BMap.Icon 只认图片地址，不支持 _html 注入 DOM，
+// 因此点位与聚合气泡都画成 SVG 再转成 data URI 交给 Icon。
 // ---------------------------------------------------------------------------
 
-/** 判断高风险脉冲动画 */
-function shouldPulse(cfg, props) {
-  if (props._status !== 'danger') return false
-  const level = String(props.warning_level ?? props.warningLevel ?? props.alertLevel ?? props.risk_level ?? props.riskLevel ?? '').toLowerCase()
-  return (cfg.key === 'alert' && (level.includes('red') || level.includes('红')))
-    || (cfg.key === 'hazard' && level.includes('极高'))
+/** 点位统一画布边长，锚点居中，保证各等级点击热区一致。 */
+const PIN_CANVAS = 30
+
+/** 与 config/gisLayers.js 的 RISK_LEVELS 保持一致。 */
+const RISK_COLOR = {
+  high: '#C9433B',
+  elevated: '#D97732',
+  medium: '#D5A126',
+  low: '#397EBE',
+  normal: '#668477'
+}
+
+const RISK_RADIUS = { high: 7, elevated: 6, medium: 5, low: 4.5, normal: 3.5 }
+
+function svgIconUrl(body, size) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${body}</svg>`
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
 }
 
 /**
- * 构建百度地图 Marker 的 DOM 样式配置。
- * 返回对象中的 innerHTML 会被赋给 BMap.Icon._html。
+ * 构建点位 Marker 图标：颜色与半径由归一化后的四级风险决定，
+ * 只有声明了 pulse 的图层在高风险时叠加一圈扩散动画，其余等级保持静止。
  */
-export function buildMarkerIcon(cfg, props, isSelected = false) {
-  const status = props._status || 'normal'
+export function buildMarkerIcon(cfg, props) {
   const risk = props._risk || 'normal'
-  const size = { high: 14, elevated: 12, medium: 10, low: 9, normal: 7 }[risk] || 7
-  const hostSize = Math.max(24, size + 12)
+  const color = RISK_COLOR[risk] || RISK_COLOR.normal
+  const radius = RISK_RADIUS[risk] || RISK_RADIUS.normal
+  const center = PIN_CANVAS / 2
+  const parts = []
 
-  const classes = [
-    'gis-pin',
-    `gis-pin--${cfg.key}`,
-    `gis-pin--s-${status}`,
-    `gis-pin--r-${risk}`,
-    `gis-pin--k-${props._iconKind || 'default'}`
-  ]
-  if (shouldPulse(cfg, props)) classes.push('is-pulse')
-  if (isSelected) classes.push('is-selected')
+  if (cfg.pulse === true && risk === 'high') {
+    parts.push(
+      `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${color}" stroke-width="1.5">`
+      + `<animate attributeName="r" values="${radius};${center - 1}" dur="2.1s" repeatCount="indefinite"/>`
+      + `<animate attributeName="opacity" values="0.55;0" dur="2.1s" repeatCount="indefinite"/>`
+      + `</circle>`
+    )
+  }
 
-  ensureMarkerStyles()
+  parts.push(
+    `<circle cx="${center}" cy="${center}" r="${radius}" fill="${color}" stroke="#ffffff" stroke-opacity="0.92" stroke-width="1.4"/>`
+  )
 
   return {
-    width: hostSize,
-    height: hostSize,
-    anchor: { x: hostSize / 2, y: hostSize / 2 },
-    innerHTML: `<span class="${classes.join(' ')}"></span>`
+    width: PIN_CANVAS,
+    height: PIN_CANVAS,
+    anchor: { x: center, y: center },
+    url: svgIconUrl(parts.join(''), PIN_CANVAS)
   }
 }
 
-/** 首次调用时注入 Marker CSS 到文档头 */
-let markerStylesInjected = false
-function ensureMarkerStyles() {
-  if (markerStylesInjected) return
-  markerStylesInjected = true
-  const style = document.createElement('style')
-  style.setAttribute('data-bmap-gis', 'marker-styles')
-  style.textContent = `
-    .gis-pin {
-      position: relative; display: flex; align-items: center; justify-content: center;
-      box-sizing: border-box; width: 7px; height: 7px;
-      font-family: inherit; font-size: 0; font-weight: 600; line-height: 1; color: transparent;
-      background-color: #71847A; border: 1px solid rgba(255,255,255,0.92); border-radius: 50%;
-      box-shadow: 0 1px 3px rgba(37,49,43,0.26);
-      transition: transform 0.16s ease, box-shadow 0.16s ease;
-    }
-    .gis-pin:hover { transform: scale(1.18); }
-    .gis-pin.is-selected { transform: scale(1.3); box-shadow: 0 0 0 3px rgba(52,82,105,0.22), 0 2px 7px rgba(37,49,43,0.3); }
-    .gis-pin--r-normal { width: 7px; height: 7px; background-color: #668477; box-shadow: 0 1px 2px rgba(37,49,43,0.22); }
-    .gis-pin--r-low { width: 9px; height: 9px; background-color: #397EBE; }
-    .gis-pin--r-medium { width: 10px; height: 10px; background-color: #D5A126; }
-    .gis-pin--r-elevated { width: 12px; height: 12px; background-color: #D97732; border-width: 1.5px; }
-    .gis-pin--r-high { width: 14px; height: 14px; background-color: #C9433B; border-width: 1.5px; box-shadow: 0 2px 5px rgba(130,48,43,0.28); }
-    .gis-pin--alert { font-size: 8px; color: #fff; }
-    .gis-pin--k-gas::before { content: '燃'; }
-    .gis-pin--k-water::before { content: '水'; }
-    .gis-pin--k-drain::before { content: '排'; }
-    .gis-pin--k-sensor::before { content: '感'; }
-    .gis-pin--k-camera::before { content: '摄'; }
-    .gis-pin--k-detector::before { content: '探'; }
-    .gis-pin--k-fan::before { content: '风'; }
-    .gis-pin--alert::before { content: '!'; font-size: inherit; }
-    .gis-pin.is-pulse::after {
-      content: ''; position: absolute; inset: -5px; border-radius: 50%;
-      border: 1.5px solid currentColor; color: #C84740; opacity: 0;
-      animation: gis-pulse 2.1s ease-out infinite; pointer-events: none;
-    }
-    @keyframes gis-pulse { 0%{transform:scale(0.8);opacity:0.38} 72%{transform:scale(1.55);opacity:0} 100%{transform:scale(1.55);opacity:0} }
-  `
-  document.head.appendChild(style)
+/** 构建低缩放级别的聚合气泡图标。 */
+export function buildClusterIcon(count, isDanger = false) {
+  const size = Math.round(28 + Math.min(8, count * 1.5))
+  const center = size / 2
+  const fill = isDanger ? 'rgba(190,69,62,0.86)' : 'rgba(229,182,94,0.84)'
+  const textColor = isDanger ? '#ffffff' : '#6B4B1D'
+  const body = `<circle cx="${center}" cy="${center}" r="${center - 2}" fill="${fill}" stroke="#ffffff" stroke-opacity="0.92" stroke-width="2"/>`
+    + `<text x="${center}" y="${center}" dy="4" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="11" font-weight="700" fill="${textColor}">${count}</text>`
+  return { width: size, height: size, anchor: { x: center, y: center }, url: svgIconUrl(body, size) }
+}
+
+/** 单色圆点图标，用于搜索结果等临时标记。 */
+export function buildDotIcon(color = '#1A73E8', size = 24) {
+  const center = size / 2
+  const body = `<circle cx="${center}" cy="${center}" r="${center - 3}" fill="${color}" stroke="#ffffff" stroke-width="2.5"/>`
+  return { width: size, height: size, anchor: { x: center, y: center }, url: svgIconUrl(body, size) }
 }
 
 // ---------------------------------------------------------------------------

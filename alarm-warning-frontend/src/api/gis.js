@@ -5,11 +5,18 @@
  * 并在 properties 上注入前端筛选/展示所需的派生字段（_title / _area / _status / _search）。
  * 地图组件只消费 FeatureCollection，不接触后端原始结构。
  *
- * 只消费真实接口数据：没有坐标的业务记录仍保留在 records 中供侧栏统计/列表使用，
- * 只有拥有可用坐标的记录才会进入 GeoJSON。接口不可用时返回空集合，不生成随机点位。
+ * 数据通道由 VITE_GIS_DEMO_MODE 决定：开启时返回 src/data/gisDemoData.js 中集中维护的
+ * 演示数据，关闭后完整恢复真实接口。两条通道共用同一套归一化逻辑，输出结构完全一致。
+ *
+ * 没有坐标的业务记录仍保留在 records 中供侧栏统计/列表使用，
+ * 只有拥有可用坐标的记录才会进入 GeoJSON。
  */
 import { MODULE_PREFIX, createModuleHttp } from './gateway'
 import { GIS_LAYERS, LAYER_MAP, areaOf, riskLevelOf } from '@/config/gisLayers'
+import { GIS_DEMO_DATA } from '@/data/gisDemoData'
+
+/** 临时演示开关：关闭后完整恢复真实 API 数据通道。 */
+export const GIS_DEMO_MODE = String(import.meta.env.VITE_GIS_DEMO_MODE || '').trim().toLowerCase() === 'true'
 
 // ---------------------------------------------------------------------------
 // 后端响应解包 & 坐标读取
@@ -180,15 +187,46 @@ export const fetchAlerts = () => fetchLayer('alert')
 // ---------------------------------------------------------------------------
 
 /**
+ * DEMO 通道：不发起任何后端请求，直接把本地演示数据走一遍与真实接口相同的归一化流程，
+ * 保证两条通道的输出结构（collections / records / sources）完全一致，
+ * 关闭 VITE_GIS_DEMO_MODE 后上层组件无需任何改动。
+ */
+function buildDemoResult() {
+  const collections = {}
+  const records = {}
+  const sources = {}
+
+  for (const cfg of GIS_LAYERS) {
+    const items = Array.isArray(GIS_DEMO_DATA[cfg.key]) ? GIS_DEMO_DATA[cfg.key] : []
+    const fc = toFeatureCollection(cfg, items)
+    collections[cfg.key] = fc
+    records[cfg.key] = items
+    sources[cfg.key] = { label: cfg.label, available: true, total: items.length, usable: fc.features.length, error: '' }
+  }
+
+  return {
+    collections,
+    records,
+    sources,
+    loadedAt: Date.now(),
+    failed: [],
+    summary: GIS_DEMO_DATA.summary || null
+  }
+}
+
+/**
  * @returns {Promise<{
  *   collections: Record<string, GeoJSON.FeatureCollection>,
  *   records: Record<string, Array>,
  *   sources: Record<string, {label:string, available:boolean, total:number, usable:number, error:string}>,
  *   loadedAt: number,
- *   failed: string[]
+ *   failed: string[],
+ *   summary?: Object|null
  * }>}
  */
 export async function fetchAllLayers() {
+  if (GIS_DEMO_MODE) return buildDemoResult()
+
   const keys = GIS_LAYERS.map((l) => l.key)
   const results = await Promise.allSettled(keys.map((k) => fetchLayer(k)))
 
@@ -220,7 +258,7 @@ export async function fetchAllLayers() {
   collections.alert = toFeatureCollection(LAYER_MAP.alert, records.alert)
   if (sources.alert) sources.alert.usable = collections.alert.features.length
 
-  return { collections, records, sources, loadedAt: Date.now(), failed }
+  return { collections, records, sources, loadedAt: Date.now(), failed, summary: null }
 }
 
 function srcConfigured(key) {

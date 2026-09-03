@@ -16,7 +16,7 @@
           type="button"
           class="gis-alarm-item"
           :class="[`is-${alarm.level}`, { 'is-locatable': alarm.locatable }]"
-          :title="alarm.locatable ? '点击定位到地图' : '该告警接口暂未提供可关联坐标'"
+          title="点击定位到地图"
           @click="$emit('locate', alarm)"
         >
           <span class="gis-alarm-item__signal" aria-hidden="true">
@@ -38,14 +38,14 @@
           </span>
         </button>
       </div>
-      <div v-else class="gis-business__empty">真实告警接口暂无数据</div>
+      <div v-else class="gis-business__empty">暂无实时预警</div>
     </section>
 
     <section class="gis-business__card gis-business__card--risk">
       <header class="gis-business__head">
         <div>
           <h3>风险统计</h3>
-          <p>当前接口风险分布</p>
+          <p>预警与风险点位分布</p>
         </div>
       </header>
       <div v-if="riskTotal > 0" class="gis-risk">
@@ -63,17 +63,17 @@
           </div>
         </div>
       </div>
-      <div v-else class="gis-business__empty">暂无可统计的风险等级数据</div>
+      <div v-else class="gis-business__empty">暂无风险等级数据</div>
     </section>
 
     <section class="gis-business__card gis-business__card--online">
       <header class="gis-business__head">
         <div>
           <h3>设备在线率</h3>
-          <p>{{ online.available ? '基于当前设备状态' : '当前接口未提供在线状态' }}</p>
+          <p>{{ online.available ? '基于当前设备台账统计' : '暂无设备在线状态' }}</p>
         </div>
         <span class="gis-online__value" :class="{ 'is-empty': !online.available }">
-          {{ online.available ? `${online.rate}%` : '--' }}
+          {{ online.available ? `${Number(online.rate).toFixed(1)}%` : '--' }}
         </span>
       </header>
       <div v-if="online.available" class="gis-online__track" aria-hidden="true">
@@ -84,7 +84,7 @@
         <span>设备 {{ online.total ?? '--' }}</span>
       </div>
       <p class="gis-online__note">
-        {{ online.hasHistory ? '最近 24h 状态趋势来自真实历史接口' : '未提供历史状态，因此不生成模拟趋势' }}
+        {{ online.hasHistory ? '最近 24 小时在线状态趋势' : '在线率按设备当前状态实时统计' }}
       </p>
     </section>
   </aside>

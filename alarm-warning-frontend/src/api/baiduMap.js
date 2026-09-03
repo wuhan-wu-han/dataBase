@@ -10,6 +10,7 @@
  * Vite 代理已将 /api/platform/** 转发到 8000 端口
  */
 import { createModuleHttp, MODULE_PREFIX } from './gateway'
+import { convertCoordsLocal } from '@/utils/coordTransform'
 
 const http = createModuleHttp(MODULE_PREFIX.platform, { silentErrors: true })
 
@@ -36,7 +37,8 @@ export async function searchPlace(keyword, city = '延安市安塞区', pageSize
 
 /**
  * 批量坐标转换：WGS84 → BD09（百度地图展示坐标系）
- * 后端调用百度 Convertor API。
+ * 优先走后端代理（百度 Convertor API）；后端不可用时降级为本地纯数学偏移公式，
+ * 保证地图点位不会因为网关不通而整体错位或渲染失败。
  *
  * @param {Array<[number, number]>} coords - 坐标列表，每项 [lon, lat]
  * @param {number} fromCoord - 原始坐标系: 1=WGS84(默认), 3=GCJ02
@@ -60,10 +62,10 @@ export async function convertCoords(coords, fromCoord = 1, toCoord = 5) {
       from_coord: fromCoord,
       to_coord: toCoord
     })
-    return data.converted || coords
+    return data.converted || convertCoordsLocal(coords, fromCoord, toCoord)
   } catch (err) {
-    console.warn('[Baidu] 坐标转换失败，降级返回原坐标:', err?.response?.data?.detail || err.message)
-    return coords
+    console.warn('[Baidu] 坐标转换接口不可用，改用本地偏移公式:', err?.response?.data?.detail || err.message)
+    return convertCoordsLocal(coords, fromCoord, toCoord)
   }
 }
 
