@@ -127,6 +127,13 @@ except ImportError:
     from src.python.asset_cost import router as asset_cost_router  # 项目根启动
 app.include_router(asset_cost_router)
 
+# 注册平台智能助手子模块路由（接 DeepSeek 大模型，自然语言→数据查询/模块跳转）
+try:
+    from assistant import router as assistant_router            # cd src/python 后启动
+except ImportError:
+    from src.python.assistant import router as assistant_router  # 项目根启动
+app.include_router(assistant_router)
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================
