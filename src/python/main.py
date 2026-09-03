@@ -52,6 +52,17 @@ app = FastAPI(
     description="基于大数据技术栈的工业车间设备状态实时监测和预测性维护服务"
 )
 
+# ==============================================================================
+# SQLite 持久化初始化（幂等建表）
+# 队友已实现 persistence/ 共享持久化层，各模块 store.py 复用。
+# 启动时调用 init_db() 确保数据库表就绪，工单/预案等数据重启不丢。
+# ==============================================================================
+try:
+    from persistence import init_db
+except ImportError:
+    from src.python.persistence import init_db
+init_db()
+
 # 添加CORS中间件
 app.add_middleware(
     CORSMiddleware,

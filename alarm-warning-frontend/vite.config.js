@@ -10,6 +10,14 @@ export default defineConfig({
     // 开发环境统一通过 api-gateway:8080 转发到各子服务
     // 生产环境由 Nginx 反向代理实现，前端使用相对路径 /api/...
     proxy: {
+      // 本地开发：/api/platform/** 直连 Python 综合服务(:8000)，去掉 /api/platform 前缀
+      // 等价于网关的 python-platform 路由 (StripPrefix=2)，无需启动 Java 网关即可看到真实数据
+      '/api/platform': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/platform/, '')
+      },
+      // 其余 /api/**（预警/燃气/道路等）仍走网关 :8080
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true
