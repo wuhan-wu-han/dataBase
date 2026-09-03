@@ -14,7 +14,7 @@
     <!-- 菜单列表 -->
     <nav class="sidebar__menu">
       <router-link
-        v-for="item in menus"
+        v-for="item in visibleMenus"
         :key="item.path"
         :to="item.path"
         class="sidebar__item"
@@ -41,10 +41,12 @@
 
 <script setup>
 import { useRoute } from 'vue-router'
+import { computed } from 'vue'
+import { can } from '@/stores/auth'
 import {
   Odometer, Location, Bell, TrendCharts, DataAnalysis,
   Aim, Box, Grid, MapLocation, AlarmClock,
-  OfficeBuilding, Coin, Tickets,
+  OfficeBuilding, Coin, Tickets, User,
   Fold, Expand
 } from '@element-plus/icons-vue'
 
@@ -75,8 +77,11 @@ const menus = [
   { path: '/emergency-plan',     title: '应急预案',     icon: AlarmClock },
   { path: '/asset',              title: '资产管理',     icon: OfficeBuilding },
   { path: '/asset-cost',         title: '资产成本',     icon: Coin },
-  { path: '/work-order',         title: '工单管理',     icon: Tickets }
+  { path: '/work-order',         title: '工单管理',     icon: Tickets },
+  { path: '/users',              title: '用户管理',     icon: User, permission: 'user:manage' }
 ]
+
+const visibleMenus = computed(() => menus.filter(item => !item.permission || can(item.permission)))
 
 // 高亮规则：根路径精确匹配，其余前缀匹配（/alerts/123 高亮 AI预警中心）
 function isActive(item) {

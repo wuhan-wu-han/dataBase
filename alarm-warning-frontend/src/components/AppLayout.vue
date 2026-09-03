@@ -42,9 +42,14 @@
             <span class="topbar-info__text">在线设备 <strong>{{ onlineDevices }}</strong></span>
           </div>
           <!-- 用户头像 -->
-          <div class="topbar-avatar">
-            <span>管</span>
-          </div>
+          <el-dropdown @command="handleUserCommand">
+            <div class="topbar-avatar"><span>{{ (authState.user?.displayName || '用').slice(0,1) }}</span></div>
+            <template #dropdown><el-dropdown-menu>
+              <el-dropdown-item command="password">修改密码</el-dropdown-item>
+              <el-dropdown-item v-if="can('user:manage')" command="users">用户管理</el-dropdown-item>
+              <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
+            </el-dropdown-menu></template>
+          </el-dropdown>
         </div>
       </header>
 
@@ -65,17 +70,41 @@
         </router-view>
       </div>
     </main>
+    <el-dialog v-model="passwordVisible" title="修改密码" width="420px">
+      <el-form label-position="top">
+        <el-form-item label="当前密码"><el-input v-model="passwordForm.currentPassword" type="password" show-password /></el-form-item>
+        <el-form-item label="新密码"><el-input v-model="passwordForm.newPassword" type="password" show-password placeholder="至少 8 位，包含字母和数字" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="passwordVisible=false">取消</el-button><el-button type="primary" :loading="passwordSaving" @click="submitPassword">确认修改</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { Clock, Monitor, WarningFilled, Menu } from '@element-plus/icons-vue'
 import Sidebar from './Sidebar.vue'
 import { hasMockData, mockModules } from '@/utils/mockMode'
+import { authState, can, clearSession } from '@/stores/auth'
+import { changePassword } from '@/api/auth'
 
 const route = useRoute()
+const router = useRouter()
+const passwordVisible = ref(false), passwordSaving = ref(false)
+const passwordForm = reactive({ currentPassword: '', newPassword: '' })
+function handleUserCommand(command) {
+  if (command === 'password') passwordVisible.value = true
+  if (command === 'users') router.push('/users')
+  if (command === 'logout') { clearSession(); router.replace('/login') }
+}
+async function submitPassword() {
+  passwordSaving.value = true
+  try { await changePassword(passwordForm); ElMessage.success('密码修改成功，请重新登录'); clearSession(); router.replace('/login') }
+  catch(e) { ElMessage.error(e.response?.data?.detail || '修改失败') }
+  finally { passwordSaving.value = false }
+}
 
 /**
  * 全出血页面（如 /gis 综合态势）：内容区去掉内边距、锁定视口高度，

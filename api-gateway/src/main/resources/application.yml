@@ -1,6 +1,9 @@
 server:
   port: 8080
 
+security:
+  jwt-secret: ${RBAC_JWT_SECRET:change-this-rbac-secret-in-production}
+
 spring:
   application:
     name: api-gateway

@@ -12,6 +12,7 @@
  */
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import { authState, clearSession } from '@/stores/auth'
 
 // 网关基础地址（开发环境通过 Vite Proxy 代理到 8080）
 export const GATEWAY_BASE = '/api'
@@ -41,7 +42,7 @@ export function createModuleHttp(prefix, options = {}) {
 
   // 请求拦截器：可在此注入 token 等
   instance.interceptors.request.use(
-    (config) => config,
+    (config) => { if (authState.token) config.headers.Authorization = `Bearer ${authState.token}`; return config },
     (error) => Promise.reject(error)
   )
 
@@ -49,6 +50,7 @@ export function createModuleHttp(prefix, options = {}) {
   instance.interceptors.response.use(
     (response) => response.data,
     (error) => {
+      if (error.response?.status === 401) { clearSession(); if (window.location.pathname !== '/login') window.location.assign('/login') }
       if (!silentErrors) {
         const message = error.response?.data?.detail
           || error.response?.data?.message

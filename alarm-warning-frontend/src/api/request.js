@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import { authState, clearSession } from '@/stores/auth'
 
 // 创建 axios 实例
 const request = axios.create({
@@ -10,9 +11,14 @@ const request = axios.create({
 // 请求拦截器
 request.interceptors.request.use(
   (config) => {
+    if (authState.token) config.headers.Authorization = `Bearer ${authState.token}`
     return config
   },
   (error) => {
+    if (error.response?.status === 401) {
+      clearSession()
+      if (window.location.pathname !== '/login') window.location.assign('/login')
+    }
     return Promise.reject(error)
   }
 )

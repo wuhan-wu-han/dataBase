@@ -1,8 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
+import { can, isAuthenticated } from '@/stores/auth'
 
 // 路由配置：AppLayout 作为父路由，所有业务路由嵌套其下，统一布局
 const routes = [
+  { path: '/login', name: 'Login', component: () => import('@/views/Login.vue'), meta: { title: '登录', public: true } },
+  { path: '/403', name: 'Forbidden', component: () => import('@/views/Forbidden.vue'), meta: { title: '无权访问' } },
   {
     path: '/',
     component: AppLayout,
@@ -105,6 +108,12 @@ const routes = [
         name: 'WorkOrder',
         component: () => import('@/views/workOrder/Index.vue'),
         meta: { title: '工单管理' }
+      },
+      {
+        path: 'users',
+        name: 'UserManagement',
+        component: () => import('@/views/UserManagement.vue'),
+        meta: { title: '用户管理', permission: 'user:manage' }
       }
     ]
   },
@@ -121,6 +130,9 @@ const router = createRouter({
 const APP_NAME = '安塞区城市安全生命线管网AI智慧平台'
 router.beforeEach((to, from, next) => {
   document.title = to.meta?.title ? `${to.meta.title} - ${APP_NAME}` : APP_NAME
+  if (!to.meta.public && !isAuthenticated.value) return next({ path: '/login', query: { redirect: to.fullPath } })
+  if (to.path === '/login' && isAuthenticated.value) return next('/')
+  if (to.meta.permission && !can(to.meta.permission)) return next('/403')
   next()
 })
 

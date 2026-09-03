@@ -45,6 +45,11 @@ import subprocess
 import json
 import time
 
+try:
+    from auth import router as auth_router, seed_rbac
+except ImportError:
+    from src.python.auth import router as auth_router, seed_rbac
+
 # 创建FastAPI应用实例
 app = FastAPI(
     title="智能制造工业设备监控平台",
@@ -65,6 +70,9 @@ app.add_middleware(
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 output_dir = os.path.join(project_root, "output")
 app.mount("/output", StaticFiles(directory=output_dir), name="output")
+
+seed_rbac()
+app.include_router(auth_router)
 
 # 注册数据治理与中台服务子模块路由
 try:
