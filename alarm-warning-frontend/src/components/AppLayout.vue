@@ -77,6 +77,9 @@
       </el-form>
       <template #footer><el-button @click="passwordVisible=false">取消</el-button><el-button type="primary" :loading="passwordSaving" @click="submitPassword">确认修改</el-button></template>
     </el-dialog>
+
+    <!-- 全局智能助手：接 DeepSeek 大模型，悬浮于所有页面之上 -->
+    <AssistantWidget />
   </div>
 </template>
 
@@ -86,6 +89,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Clock, Monitor, WarningFilled, Menu } from '@element-plus/icons-vue'
 import Sidebar from './Sidebar.vue'
+import AssistantWidget from './AssistantWidget.vue'
 import { hasMockData, mockModules } from '@/utils/mockMode'
 import { authState, can, clearSession } from '@/stores/auth'
 import { changePassword } from '@/api/auth'

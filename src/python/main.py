@@ -134,6 +134,13 @@ except ImportError:
     from src.python.baidu_map_api import router as baidu_router  # 项目根启动
 app.include_router(baidu_router, prefix="/api/platform")
 
+# 注册平台智能助手子模块路由（接 DeepSeek 大模型，自然语言→数据查询/模块跳转）
+try:
+    from assistant import router as assistant_router            # cd src/python 后启动
+except ImportError:
+    from src.python.assistant import router as assistant_router  # 项目根启动
+app.include_router(assistant_router)
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================
