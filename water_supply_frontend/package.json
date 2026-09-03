@@ -1,0 +1,22 @@
+{
+  "name": "water-supply-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "供水管网精细化管控可视化大屏",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "axios": "^1.6.8",
+    "echarts": "^5.5.0",
+    "element-plus": "^2.7.0",
+    "vue": "^3.4.21"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.6.2",
+    "typescript": "^5.2.2",
+    "vite": "^4.5.3"
+  }
+}
