@@ -11,8 +11,17 @@
       <StatCard label="设备在线率" :value="stats.deviceOnlineRate" icon="Monitor" color="#34C759" />
     </div>
 
-    <!-- 第二行：折线图（预警趋势）+ 环形图（预警等级） -->
-    <div class="dashboard__row dashboard__row--charts">
+    <!-- 第二行：GIS 地图（全宽，高度 600px+） -->
+    <section class="app-card dashboard__map-card">
+      <header class="card-title">
+        <h3 class="card-title__text">GIS 一张图</h3>
+        <span class="card-title__badge">实时监测</span>
+      </header>
+      <GISMap />
+    </section>
+
+    <!-- 第三行：风险趋势 + 预警等级 + 最新预警 -->
+    <div class="dashboard__row dashboard__row--bottom">
       <section class="app-card dashboard__chart-card dashboard__chart-card--line">
         <header class="card-title">
           <h3 class="card-title__text">预警趋势</h3>
@@ -26,48 +35,38 @@
         </header>
         <div ref="pieRef" class="dashboard__chart-canvas"></div>
       </section>
+      <section class="app-card dashboard__latest">
+        <header class="card-title">
+          <h3 class="card-title__text">最新预警事件</h3>
+          <router-link to="/alerts" class="dashboard__link">查看全部</router-link>
+        </header>
+        <el-table
+          :data="latestAlerts"
+          v-loading="loading"
+          class="app-table"
+          row-class-name="clickable-row"
+          @row-click="goDetail"
+        >
+          <el-table-column prop="alertEventCode" label="预警编号" min-width="180" />
+          <el-table-column prop="deviceType" label="设备" min-width="120" />
+          <el-table-column prop="areaId" label="区域" width="120" />
+          <el-table-column label="等级" width="110" align="center">
+            <template #default="{ row }"><AlertLevelTag :level="row.alertLevel" /></template>
+          </el-table-column>
+          <el-table-column label="状态" width="110" align="center">
+            <template #default="{ row }"><AlertStatusTag :status="row.alertStatus" /></template>
+          </el-table-column>
+          <el-table-column label="时间" width="170">
+            <template #default="{ row }">{{ formatDateTime(row.eventTimestamp) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="100" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click.stop="goDetail(row)">详情</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
     </div>
-
-    <!-- 第三行：风险分布横向渐变柱状图 -->
-    <section class="app-card dashboard__bar-card">
-      <header class="card-title">
-        <h3 class="card-title__text">风险分布</h3>
-      </header>
-      <div ref="barRef" class="dashboard__bar-canvas"></div>
-    </section>
-
-    <!-- 第四行：最新预警事件表格 -->
-    <section class="app-card dashboard__latest">
-      <header class="card-title">
-        <h3 class="card-title__text">最新预警事件</h3>
-        <router-link to="/alerts" class="dashboard__link">查看全部</router-link>
-      </header>
-      <el-table
-        :data="latestAlerts"
-        v-loading="loading"
-        class="app-table"
-        row-class-name="clickable-row"
-        @row-click="goDetail"
-      >
-        <el-table-column prop="alertEventCode" label="预警编号" min-width="180" />
-        <el-table-column prop="deviceType" label="设备" min-width="120" />
-        <el-table-column prop="areaId" label="区域" width="120" />
-        <el-table-column label="等级" width="110" align="center">
-          <template #default="{ row }"><AlertLevelTag :level="row.alertLevel" /></template>
-        </el-table-column>
-        <el-table-column label="状态" width="110" align="center">
-          <template #default="{ row }"><AlertStatusTag :status="row.alertStatus" /></template>
-        </el-table-column>
-        <el-table-column label="时间" width="170">
-          <template #default="{ row }">{{ formatDateTime(row.eventTimestamp) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="100" align="center" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" size="small" @click.stop="goDetail(row)">详情</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </section>
   </div>
 </template>
 
@@ -78,6 +77,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import AlertLevelTag from '@/components/AlertLevelTag.vue'
 import AlertStatusTag from '@/components/AlertStatusTag.vue'
+import GISMap from '@/views/gis/GISMap.vue'
 import { useEChart } from '@/utils/chart'
 import { getAlertList } from '@/api/alert'
 import { formatDateTime } from '@/utils/format'
@@ -90,7 +90,6 @@ const stats = ref({
   today: 0,
   highRisk: 0,
   processing: 0,
-  // TODO: 设备在线率无后端接口，前端常量占位
   deviceOnlineRate: '98.6%'
 })
 
@@ -102,12 +101,10 @@ const latestAlerts = ref([])
 // ===== ECharts 实例 =====
 const lineRef = ref(null)
 const pieRef = ref(null)
-const barRef = ref(null)
 const { setOption: setLineOption } = useEChart(lineRef)
 const { setOption: setPieOption } = useEChart(pieRef)
-const { setOption: setBarOption } = useEChart(barRef)
 
-// 加载统计：今日总数 / 红色 / OPEN
+// 加载统计
 async function loadStats() {
   const [today, high, proc] = await Promise.all([
     getAlertList({ page: 1, size: 1 }),
@@ -122,7 +119,7 @@ async function loadStats() {
   }
 }
 
-// 加载近 7 天趋势：拉取最近 100 条按日分桶
+// 加载近 7 天趋势
 async function loadTrend() {
   const res = await getAlertList({ page: 1, size: 100 })
   const records = res?.records || []
@@ -137,7 +134,6 @@ async function loadTrend() {
   trendData.value = buckets
 }
 
-// 构建最近 7 天的桶结构
 function buildLast7Days() {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -154,7 +150,7 @@ function buildLast7Days() {
   return buckets
 }
 
-// 加载等级分布：4 个等级分别取 total
+// 加载等级分布
 async function loadDistribution() {
   const [blue, yellow, orange, red] = await Promise.all([
     getAlertList({ alertLevel: 'BLUE', page: 1, size: 1 }),
@@ -191,10 +187,8 @@ onMounted(async () => {
   } catch (e) {
     console.error('Dashboard 数据加载失败:', e)
   }
-  // 数据就绪后渲染图表
   renderLineChart()
   renderPieChart()
-  renderBarChart()
 })
 
 // 平滑曲线 + 面积渐变
@@ -255,7 +249,6 @@ function renderPieChart() {
         itemStyle: { color: d.color }
       }))
     }, {
-      // 中心标签：总数 + 文字
       type: 'pie',
       radius: ['0%', '0%'],
       silent: true,
@@ -272,57 +265,6 @@ function renderPieChart() {
     }]
   })
 }
-
-// 横向渐变柱状图：风险分布
-function renderBarChart() {
-  const data = distribution.value.slice().reverse() // 红色在上更直观
-  setBarOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 60, right: 40, top: 12, bottom: 12 },
-    xAxis: {
-      type: 'value',
-      splitLine: { lineStyle: { color: 'rgba(0,0,0,0.04)' } },
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: { color: '#86868B', fontSize: 12 }
-    },
-    yAxis: {
-      type: 'category',
-      data: data.map(d => d.name),
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: { color: '#424245', fontSize: 13, fontWeight: 500 }
-    },
-    series: [{
-      name: '预警数',
-      type: 'bar',
-      data: data.map(d => ({
-        value: d.value,
-        itemStyle: {
-          color: {
-            type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
-            colorStops: [
-              { offset: 0, color: hexToRgba(d.color, 0.4) },
-              { offset: 1, color: d.color }
-            ]
-          },
-          borderRadius: [0, 6, 6, 0]
-        }
-      })),
-      barWidth: 22
-    }]
-  })
-}
-
-// #RRGGBB → rgba
-function hexToRgba(hex, alpha) {
-  const m = hex.replace('#', '').match(/^([0-9a-fA-F]{6})$/)
-  if (!m) return `rgba(0,113,227,${alpha})`
-  const r = parseInt(m[1].slice(0, 2), 16)
-  const g = parseInt(m[1].slice(2, 4), 16)
-  const b = parseInt(m[1].slice(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
 </script>
 
 <style scoped>
@@ -334,13 +276,12 @@ function hexToRgba(hex, alpha) {
 .dashboard__row--stats {
   grid-template-columns: repeat(4, 1fr);
 }
-.dashboard__row--charts {
-  grid-template-columns: 2fr 1fr;
+.dashboard__row--bottom {
+  grid-template-columns: 1fr 1fr 1.5fr;
 }
 
 /* 图表卡片 */
 .dashboard__chart-card,
-.dashboard__bar-card,
 .dashboard__latest {
   padding: 20px 24px;
 }
@@ -351,10 +292,6 @@ function hexToRgba(hex, alpha) {
 .dashboard__chart-canvas {
   width: 100%;
   height: 280px;
-}
-.dashboard__bar-canvas {
-  width: 100%;
-  height: 220px;
 }
 .dashboard__link {
   font-size: 13px;
@@ -369,8 +306,26 @@ function hexToRgba(hex, alpha) {
   cursor: pointer;
 }
 
-@media (max-width: 1024px) {
+/* GIS 地图卡片 */
+.dashboard__map-card {
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+.dashboard__map-card :deep(.gis-map) {
+  height: 600px;
+}
+
+@media (max-width: 1200px) {
+  .dashboard__row--bottom {
+    grid-template-columns: 1fr 1fr;
+  }
+  .dashboard__row--bottom > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 768px) {
   .dashboard__row--stats { grid-template-columns: repeat(2, 1fr); }
-  .dashboard__row--charts { grid-template-columns: 1fr; }
+  .dashboard__row--bottom { grid-template-columns: 1fr; }
 }
 </style>

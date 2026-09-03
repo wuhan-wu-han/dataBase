@@ -58,7 +58,7 @@ const brandIcon = Odometer
 const collapseIcon = Fold
 const expandIcon = Expand
 
-// 菜单清单（12 项，按用户最新要求）：
+// 菜单清单（12 项）：
 // 监控大屏 / AI预警中心 / 故障预测中心 / 风险研判中心 / 燃气风控 / 危化品监管 /
 // 综合管廊 / 道路塌陷 / 应急预案 / 资产管理 / 资产成本 / 工单管理
 const menus = [
