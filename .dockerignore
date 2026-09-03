@@ -1,0 +1,16 @@
+.git
+**/.git
+**/node_modules
+**/dist
+**/target
+**/__pycache__
+**/*.pyc
+**/*.log
+tmp
+data
+docs
+gas_asset_frontend
+gas_risk_frontend
+manhole_cover_frontend
+road_hazard_frontend
+water_supply_frontend

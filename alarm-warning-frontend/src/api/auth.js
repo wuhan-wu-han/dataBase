@@ -1,8 +1,8 @@
 import axios from 'axios'
 
-// 开发环境可直连新版认证服务，完整部署时通过 VITE_AUTH_BASE_URL 切回统一网关。
+// 默认使用同源 /auth：开发环境由 Vite 代理，容器部署由 Nginx 代理。
 const authHttp = axios.create({
-  baseURL: import.meta.env.VITE_AUTH_BASE_URL || 'http://127.0.0.1:18001/auth',
+  baseURL: import.meta.env.VITE_AUTH_BASE_URL || '/auth',
   timeout: 10000
 })
 

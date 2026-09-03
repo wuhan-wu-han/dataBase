@@ -25,10 +25,10 @@
     </section>
 
     <section class="gis-layers__group">
-      <h4 class="gis-layers__group-title">状态图例</h4>
-      <div v-for="s in STATUS_OPTIONS" :key="s.value" class="gis-legend-row">
-        <span class="gis-legend-dot" :style="{ background: STATUS[s.value].color }"></span>
-        <span class="gis-legend-text">{{ STATUS[s.value].label }}</span>
+      <h4 class="gis-layers__group-title">风险图例</h4>
+      <div v-for="key in riskKeys" :key="key" class="gis-legend-row">
+        <span class="gis-legend-dot" :style="{ background: RISK_LEVELS[key].color }"></span>
+        <span class="gis-legend-text">{{ RISK_LEVELS[key].label }}</span>
       </div>
       <p class="gis-layers__hint">缩放地图可分级显示：井盖、设备点位在高缩放级别出现。</p>
     </section>
@@ -37,7 +37,9 @@
 
 <script setup>
 import { computed } from 'vue'
-import { LAYER_GROUPS, STATUS, STATUS_OPTIONS } from '@/config/gisLayers'
+import { LAYER_GROUPS, RISK_LEVELS } from '@/config/gisLayers'
+
+const riskKeys = ['high', 'elevated', 'medium', 'low', 'normal']
 
 const props = defineProps({
   /** [{ key, label, group, geometry, color, visible, count }] */

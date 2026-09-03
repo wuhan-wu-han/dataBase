@@ -56,13 +56,15 @@ function shouldPulse(cfg, props) {
  */
 export function buildMarkerIcon(cfg, props, isSelected = false) {
   const status = props._status || 'normal'
-  const size = status === 'danger' ? 15 : status === 'warning' ? 11 : 10
+  const risk = props._risk || 'normal'
+  const size = { high: 14, elevated: 12, medium: 10, low: 9, normal: 7 }[risk] || 7
   const hostSize = Math.max(24, size + 12)
 
   const classes = [
     'gis-pin',
     `gis-pin--${cfg.key}`,
     `gis-pin--s-${status}`,
+    `gis-pin--r-${risk}`,
     `gis-pin--k-${props._iconKind || 'default'}`
   ]
   if (shouldPulse(cfg, props)) classes.push('is-pulse')
@@ -88,21 +90,20 @@ function ensureMarkerStyles() {
   style.textContent = `
     .gis-pin {
       position: relative; display: flex; align-items: center; justify-content: center;
-      box-sizing: border-box; width: 8px; height: 8px;
+      box-sizing: border-box; width: 7px; height: 7px;
       font-family: inherit; font-size: 0; font-weight: 600; line-height: 1; color: transparent;
       background-color: #71847A; border: 1px solid rgba(255,255,255,0.92); border-radius: 50%;
       box-shadow: 0 1px 3px rgba(37,49,43,0.26);
       transition: transform 0.16s ease, box-shadow 0.16s ease;
     }
+    .gis-pin:hover { transform: scale(1.18); }
     .gis-pin.is-selected { transform: scale(1.3); box-shadow: 0 0 0 3px rgba(52,82,105,0.22), 0 2px 7px rgba(37,49,43,0.3); }
-    .gis-pin--s-normal { background-color: #71847A; }
-    .gis-pin--s-warning { width: 11px; height: 11px; font-size: 8px; color: #fff; background-color: #D59435; border-width: 1.5px; }
-    .gis-pin--s-danger { width: 15px; height: 15px; font-size: 9px; color: #fff; background-color: #C84740; border-width: 1.5px; box-shadow: 0 2px 5px rgba(130,48,43,0.3); }
-    .gis-pin--alert { width: 10px; height: 10px; font-size: 8px; color: #fff; }
-    .gis-pin--alert.gis-pin--k-blue { background-color: #5D82A3; }
-    .gis-pin--alert.gis-pin--k-yellow { background-color: #D3A23B; }
-    .gis-pin--alert.gis-pin--k-orange { width: 12px; height: 12px; background-color: #D4773F; }
-    .gis-pin--alert.gis-pin--k-red { width: 15px; height: 15px; font-size: 9px; background-color: #C84740; }
+    .gis-pin--r-normal { width: 7px; height: 7px; background-color: #668477; box-shadow: 0 1px 2px rgba(37,49,43,0.22); }
+    .gis-pin--r-low { width: 9px; height: 9px; background-color: #397EBE; }
+    .gis-pin--r-medium { width: 10px; height: 10px; background-color: #D5A126; }
+    .gis-pin--r-elevated { width: 12px; height: 12px; background-color: #D97732; border-width: 1.5px; }
+    .gis-pin--r-high { width: 14px; height: 14px; background-color: #C9433B; border-width: 1.5px; box-shadow: 0 2px 5px rgba(130,48,43,0.28); }
+    .gis-pin--alert { font-size: 8px; color: #fff; }
     .gis-pin--k-gas::before { content: '燃'; }
     .gis-pin--k-water::before { content: '水'; }
     .gis-pin--k-drain::before { content: '排'; }
@@ -114,7 +115,7 @@ function ensureMarkerStyles() {
     .gis-pin.is-pulse::after {
       content: ''; position: absolute; inset: -5px; border-radius: 50%;
       border: 1.5px solid currentColor; color: #C84740; opacity: 0;
-      animation: gis-pulse 1.8s ease-out infinite; pointer-events: none;
+      animation: gis-pulse 2.1s ease-out infinite; pointer-events: none;
     }
     @keyframes gis-pulse { 0%{transform:scale(0.8);opacity:0.38} 72%{transform:scale(1.55);opacity:0} 100%{transform:scale(1.55);opacity:0} }
   `

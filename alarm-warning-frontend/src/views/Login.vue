@@ -44,10 +44,12 @@ async function submit() {
   loading.value = true
   try {
     setSession(await login(form))
+    const requestedPath = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
+    const destination = requestedPath.startsWith('/') && !requestedPath.startsWith('/login') ? requestedPath : '/'
+    await router.replace(destination)
     ElMessage.success('登录成功')
-    router.replace(typeof route.query.redirect === 'string' ? route.query.redirect : '/')
   } catch (error) {
-    ElMessage.error(error.response?.data?.detail || '用户名或密码错误')
+    ElMessage.error(error.response?.data?.detail || error.message || '登录失败，请重试')
   } finally {
     loading.value = false
   }

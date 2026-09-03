@@ -29,7 +29,7 @@
 
         <el-select v-model="areaFilter" class="gis-toolbar__select" placeholder="区域筛选">
           <el-option label="全部区域" value="" />
-          <el-option v-for="a in AREAS" :key="a" :label="a" :value="a" />
+          <el-option v-for="a in areaOptions" :key="a" :label="a" :value="a" />
         </el-select>
         <el-select v-model="statusFilter" class="gis-toolbar__select" placeholder="状态筛选">
           <el-option label="全部状态" value="" />
@@ -88,12 +88,25 @@
         </div>
       </aside>
 
-      <div class="gis-mapwrap">
+      <main class="gis-workspace">
+        <div class="gis-stage">
+          <div class="gis-mapwrap">
         <!-- 百度地图容器 -->
         <div ref="mapEl" class="gis-map"></div>
 
-        <!-- 右上角自定义控件组：缩放 + 地图类型 -->
+        <!-- 右上角自定义控件组：回到安塞区 + 缩放 + 地图类型 -->
         <div class="gis-map-controls">
+          <button class="gis-home-btn" type="button" title="回到安塞区检测区域" @click="fitToAnsei(14)">
+            <!-- 中心定位图标（同心圆 + 十字） -->
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.4"/>
+              <circle cx="8" cy="8" r="1.6" fill="currentColor"/>
+              <line x1="8" y1="0.6" x2="8" y2="3.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              <line x1="8" y1="12.6" x2="8" y2="15.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              <line x1="0.6" y1="8" x2="3.4" y2="8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              <line x1="12.6" y1="8" x2="15.4" y2="8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </button>
           <div class="gis-zoom-group">
             <button class="gis-zoom-btn" type="button" title="放大" @click="zoomIn">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -183,22 +196,54 @@
         <!-- 空数据态 -->
         <div v-else-if="!loading && totalFeatures === 0" class="gis-state">
           <el-icon :size="20"><Aim /></el-icon>
-          <span>当前筛选条件下没有要素</span>
+          <span>真实接口暂无可定位要素</span>
           <el-button size="small" plain @click="resetFilters">重置筛选</el-button>
         </div>
 
-        <!-- 左下角图例 -->
-        <div class="gis-legend">
-          <span
-            v-for="s in STATUS_OPTIONS"
-            :key="s.value"
-            class="gis-legend__item"
-          >
-            <i class="gis-legend__dot" :style="{ background: STATUS[s.value].color }"></i>
-            {{ STATUS[s.value].label }}
-          </span>
+        <div v-else-if="!loading && anseiPointCount === 0" class="gis-state gis-state--notice">
+          <el-icon :size="18"><Aim /></el-icon>
+          <span>当前接口未返回安塞区范围内的风险或设备坐标</span>
         </div>
-      </div>
+
+        <!-- 左下角图例：管线类型 + 风险等级 两张卡片 -->
+        <div class="gis-legend">
+          <div class="gis-legend__group">
+            <div class="gis-legend__title">管线类型</div>
+            <span
+              v-for="cfg in GIS_LAYERS.filter(l => l.geometry === 'line')"
+              :key="'type-' + cfg.key"
+              class="gis-legend__item"
+            >
+              <span class="gis-legend__line" :style="{ background: cfg.color }"></span>
+              {{ cfg.label }}
+            </span>
+          </div>
+          <div class="gis-legend__divider"></div>
+          <div class="gis-legend__group">
+            <div class="gis-legend__title">风险等级</div>
+            <span
+              v-for="s in riskLegendItems"
+              :key="'risk-' + s.key"
+              class="gis-legend__item"
+            >
+              <i class="gis-legend__dot" :style="{ background: s.color }"></i>
+              {{ s.label }}
+            </span>
+          </div>
+        </div>
+          </div>
+
+          <GISBusinessPanel
+            :alarms="recentAlarms"
+            :today-count="todayAlarmCount"
+            :risk-items="riskDistribution"
+            :online="deviceOnline"
+            @locate="locateAlarm"
+          />
+        </div>
+
+        <GISMetrics :items="metricItems" />
+      </main>
     </div>
 
     <!-- ===================== 要素详情抽屉（桌面右侧 / 移动底部） ===================== -->
@@ -274,7 +319,7 @@
         <label class="gis-filter-sheet__label">区域</label>
         <el-select v-model="areaFilter" placeholder="全部区域">
           <el-option label="全部区域" value="" />
-          <el-option v-for="a in AREAS" :key="a" :label="a" :value="a" />
+          <el-option v-for="a in areaOptions" :key="a" :label="a" :value="a" />
         </el-select>
 
         <label class="gis-filter-sheet__label">状态</label>
@@ -293,8 +338,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount, onActivated, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Search, Refresh, Filter, Files, Close,
@@ -302,15 +347,18 @@ import {
   Position, Location, Top
 } from '@element-plus/icons-vue'
 import LayerTree from './LayerTree.vue'
+import GISBusinessPanel from './GISBusinessPanel.vue'
+import GISMetrics from './GISMetrics.vue'
 import { fetchAllLayers } from '@/api/gis'
 import {
-  GIS_LAYERS, LAYER_MAP, ANSAI_CENTER,
-  AREAS, STATUS, STATUS_OPTIONS, toneColor
+  GIS_LAYERS, LAYER_MAP, ANSAI_CENTER, ANSAI_BOUNDS,
+  AREAS, STATUS_OPTIONS, RISK_LEVELS, riskLevelOf, toneColor
 } from '@/config/gisLayers'
 import { waitBMap, buildMarkerIcon } from '@/utils/baidumap'
 import { searchPlace as backendSearchPlace, convertCoords, planDriving as backendPlanDriving } from '@/api/baiduMap'
 
 const router = useRouter()
+const route = useRoute()
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -349,9 +397,11 @@ const navResult = ref(null)     // { distance, duration }
 let drivingRoute = null         // BMap.DrivingRoute 实例，用于清除
 
 /** 图层开关与要素计数 */
-const visible = reactive(Object.fromEntries(GIS_LAYERS.map((l) => [l.key, true])))
+// 管网数据保留，但进入页面时默认关闭；风险、告警和设施点位优先成为主视觉。
+const visible = reactive(Object.fromEntries(GIS_LAYERS.map((l) => [l.key, l.geometry !== 'line'])))
 const counts = reactive(Object.fromEntries(GIS_LAYERS.map((l) => [l.key, 0])))
 const sources = reactive({})
+const records = reactive({})
 
 // ---------------------------------------------------------------------------
 // 百度地图运行时对象（非响应式）
@@ -379,6 +429,98 @@ let highlightOverlay = null   // 当前选中高亮覆盖物
 let selectedOverlay = null    // 选中描边覆盖物
 
 // ---------------------------------------------------------------------------
+// 视野控制：默认聚焦安塞区检测区域
+// ---------------------------------------------------------------------------
+
+/** 是否是首次进入（true 时 renderAll 后自动 fitBounds） */
+let firstEntry = true
+
+/** 默认视野只采集安塞区内可定位的风险、告警与设施点，不让隐藏管线拉远视野。 */
+function collectBusinessBounds() {
+  let minLng = Infinity, maxLng = -Infinity
+  let minLat = Infinity, maxLat = -Infinity
+  let hasAny = false
+
+  for (const key of ['alert', 'hazard', 'asset', 'manhole']) {
+    if (!visible[key]) continue
+    const items = overlayMap[key] || []
+    for (const item of items) {
+      const bdCoords = item.bdCoords
+      const raw = item.feature?.geometry?.coordinates
+      if (!Array.isArray(bdCoords) || Array.isArray(bdCoords[0]) || !Array.isArray(raw)) continue
+      const [rawLng, rawLat] = raw.map(Number)
+      // 后端若返回其他城市的种子数据，不把安塞区默认视野拉到外地。
+      if (rawLng < ANSAI_BOUNDS.west - 0.03 || rawLng > ANSAI_BOUNDS.east + 0.03 ||
+          rawLat < ANSAI_BOUNDS.south - 0.03 || rawLat > ANSAI_BOUNDS.north + 0.03) continue
+      const [lng, lat] = bdCoords.map(Number)
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue
+      if (lng < minLng) minLng = lng
+      if (lng > maxLng) maxLng = lng
+      if (lat < minLat) minLat = lat
+      if (lat > maxLat) maxLat = lat
+      hasAny = true
+    }
+  }
+
+  if (!hasAny) return null
+  return { minLng, maxLng, minLat, maxLat }
+}
+
+/** 聚焦安塞区主要风险点与监测点；没有安塞区坐标时回到行政区中心。 */
+function fitToAnsei(maxZoom = 14) {
+  if (!map) return false
+
+  const bounds = collectBusinessBounds()
+  if (!bounds) {
+    const center = new BMap.Point(ANSAI_CENTER[1], ANSAI_CENTER[0])
+    map.centerAndZoom(center, 13)
+    return false
+  }
+
+  const w = bounds.maxLng - bounds.minLng
+  const h = bounds.maxLat - bounds.minLat
+  if (w < 0.0001 && h < 0.0001) {
+    map.centerAndZoom(new BMap.Point(bounds.minLng, bounds.minLat), Math.min(maxZoom, 15))
+    return true
+  }
+  const padLng = Math.max(w * 0.28, 0.006)
+  const padLat = Math.max(h * 0.28, 0.006)
+  const sw = new BMap.Point(bounds.minLng - padLng, bounds.minLat - padLat)
+  const ne = new BMap.Point(bounds.maxLng + padLng, bounds.maxLat + padLat)
+  const paddedBounds = new BMap.Bounds(sw, ne)
+
+  try {
+    map.setViewport(paddedBounds, { zoomFactor: -1, enableAnimation: true })
+    const currentZoom = map.getZoom()
+    if (currentZoom > maxZoom) {
+      map.setZoom(maxZoom)
+    }
+    return true
+  } catch (e) {
+    console.warn('[BMap] setViewport 失败，降级 centerAndZoom:', e?.message)
+    const center = paddedBounds.getCenter()
+    map.centerAndZoom(center, 13)
+    return false
+  }
+}
+
+/**
+ * 地图容器 resize + 重新聚焦视野。
+ * 从其他页面切回 /gis 时调用，确保容器尺寸变化后地图正确刷新。
+ */
+function refreshMapAfterActivate() {
+  if (!map || !mapEl.value) return
+  nextTick(() => {
+    setTimeout(() => {
+      // BMap v3.0 没有 invalidateSize()，用 DOM 重置 + 重新设置 center/zoom 触发重绘
+      try { map.checkResize?.() } catch { /* noop */ }
+      // 用 setViewport 再次聚焦（同时刷新容器尺寸）
+      fitToAnsei(14)
+    }, 120)
+  })
+}
+
+// ---------------------------------------------------------------------------
 // 派生数据
 // ---------------------------------------------------------------------------
 const layerView = computed(() =>
@@ -397,18 +539,34 @@ const totalFeatures = computed(() =>
   GIS_LAYERS.reduce((sum, cfg) => sum + (counts[cfg.key] || 0), 0)
 )
 
+const anseiPointCount = computed(() => ['alert', 'hazard', 'asset', 'manhole'].reduce((sum, key) => {
+  const count = (collections[key]?.features || []).filter((feature) => {
+    const [lng, lat] = feature.geometry?.coordinates || []
+    return Number(lng) >= ANSAI_BOUNDS.west - 0.03 && Number(lng) <= ANSAI_BOUNDS.east + 0.03 &&
+      Number(lat) >= ANSAI_BOUNDS.south - 0.03 && Number(lat) <= ANSAI_BOUNDS.north + 0.03
+  }).length
+  return sum + count
+}, 0))
+
 const sourceSummary = computed(() => {
   const list = Object.values(sources)
   if (list.length === 0) return '加载中'
-  const real = list.filter((s) => !s.mock).length
-  const mock = list.filter((s) => s.mock).length
-  if (mock === 0) return `实时接口 ${real}/${list.length}`
-  if (real === 0) return '演示数据（接口未连通）'
-  return `实时 ${real} · 演示 ${mock}`
+  const available = list.filter((s) => s.available).length
+  const usable = list.reduce((sum, s) => sum + Number(s.usable || 0), 0)
+  return `真实接口 ${available}/${list.length} · 可定位 ${usable}`
 })
 
+const areaOptions = computed(() => {
+  const dynamic = GIS_LAYERS.flatMap((cfg) =>
+    (collections[cfg.key]?.features || []).map((feature) => feature.properties?._area).filter(Boolean)
+  )
+  return [...new Set([...AREAS, ...dynamic])]
+})
+
+const riskLegendItems = computed(() => ['high', 'elevated', 'medium', 'low'].map((key) => RISK_LEVELS[key]))
+
 const statusMeta = computed(() =>
-  (selected.value ? STATUS[selected.value.status] : null) || STATUS.normal
+  (selected.value ? RISK_LEVELS[selected.value.risk] : null) || RISK_LEVELS.normal
 )
 
 // ---------------------------------------------------------------------------
@@ -439,15 +597,142 @@ const detailRows = computed(() => {
     })
   }
   rows.push({ label: '所属片区', value: sel.area, unit: '', color: null })
-  if (sel.latlng) {
+  const coord = sel.sourceCoords || sel.latlng
+  if (coord) {
     rows.push({
       label: '坐标 (经纬度)',
-      value: `${sel.latlng[1].toFixed(5)}, ${sel.latlng[0].toFixed(5)}`,
+      value: `${Number(coord[0]).toFixed(5)}, ${Number(coord[1]).toFixed(5)}`,
       unit: '',
       color: null
     })
   }
   return rows
+})
+
+// ---------------------------------------------------------------------------
+// 右侧业务态势与底部指标（全部由当前真实接口记录派生）
+// ---------------------------------------------------------------------------
+function identityOf(item) {
+  return String(
+    item?.alertEventCode ?? item?.alert_event_code ?? item?.code ?? item?.asset_code ??
+    item?.assetCode ?? item?.id ?? ''
+  )
+}
+
+function parseBusinessTime(item) {
+  const raw = item?.eventTimestamp ?? item?.event_timestamp ?? item?.event_time ?? item?.eventTime ??
+    item?.alarm_ts ?? item?.ts_ms ?? item?.created_ts ?? item?.createdAt ?? item?.created_at
+  if (raw === undefined || raw === null || raw === '') return null
+  const numeric = Number(raw)
+  const value = Number.isFinite(numeric)
+    ? (Math.abs(numeric) < 1e11 ? numeric * 1000 : numeric)
+    : raw
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function sameLocalDay(a, b = new Date()) {
+  return !!a && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+function compactBusinessTime(date) {
+  if (!date) return '--:--'
+  const pad = (value) => String(value).padStart(2, '0')
+  if (sameLocalDay(date)) return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function findFeatureForRecord(key, item) {
+  const id = identityOf(item)
+  if (!id) return null
+  return (collections[key]?.features || []).find((feature) => identityOf(feature.properties) === id) || null
+}
+
+const recentAlarms = computed(() => {
+  const cfg = LAYER_MAP.alert
+  return (records.alert || [])
+    .map((item, index) => {
+      const feature = findFeatureForRecord('alert', item)
+      const level = riskLevelOf(item, cfg.statusOf(item))
+      const date = parseBusinessTime(item)
+      return {
+        id: identityOf(item) || `alert-${index}`,
+        title: cfg.titleOf(item),
+        level,
+        levelLabel: RISK_LEVELS[level]?.label || '风险',
+        area: item.area_name ?? item.areaName ?? item.zone ?? item.area_id ?? item.areaId ?? '',
+        device: item.device_id ?? item.deviceId ?? item.device_type ?? item.deviceType ?? '',
+        time: compactBusinessTime(date),
+        timestamp: date?.getTime() || 0,
+        feature,
+        locatable: !!feature
+      }
+    })
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 8)
+})
+
+const todayAlarmCount = computed(() =>
+  (records.alert || []).reduce((sum, item) => sum + (sameLocalDay(parseBusinessTime(item)) ? 1 : 0), 0)
+)
+
+const riskDistribution = computed(() => {
+  const countsByLevel = { high: 0, elevated: 0, medium: 0, low: 0 }
+  const candidates = [...(records.alert || []), ...(records.hazard || [])]
+  for (const item of candidates) {
+    const explicit = item.warning_level ?? item.warningLevel ?? item.alertLevel ?? item.risk_level ?? item.riskLevel ?? item.level
+    if (explicit === undefined || explicit === null || explicit === '') continue
+    const level = riskLevelOf(item)
+    if (level in countsByLevel) countsByLevel[level] += 1
+  }
+  return ['high', 'elevated', 'medium', 'low'].map((key) => ({ ...RISK_LEVELS[key], value: countsByLevel[key] }))
+})
+
+const deviceOnline = computed(() => {
+  const items = [...(records.asset || []), ...(records.manhole || [])]
+  const withOnlineStatus = items
+    .map((item) => item.online_status ?? item.onlineStatus ?? item.is_online ?? item.isOnline)
+    .filter((value) => value !== undefined && value !== null && value !== '')
+  if (!withOnlineStatus.length) {
+    return { available: false, rate: 0, online: null, total: null, hasHistory: false }
+  }
+  const online = withOnlineStatus.filter((value) => {
+    if (value === true || value === 1) return true
+    const text = String(value).toLowerCase()
+    return text === 'online' || text === 'true' || text.includes('在线')
+  }).length
+  return {
+    available: true,
+    rate: Math.round(online / withOnlineStatus.length * 1000) / 10,
+    online,
+    total: withOnlineStatus.length,
+    hasHistory: false
+  }
+})
+
+function sumNumeric(items, keys) {
+  return (items || []).reduce((sum, item) => {
+    const raw = keys.map((key) => item?.[key]).find((value) => value !== undefined && value !== null && value !== '')
+    const value = Number(raw)
+    return sum + (Number.isFinite(value) ? value : 0)
+  }, 0)
+}
+
+const metricItems = computed(() => {
+  const pipelineLengthM = sumNumeric(records.asset, ['length_m', 'lengthM'])
+  const facilities = (records.asset?.length || 0) + (records.manhole?.length || 0)
+  const risks = (records.hazard?.length || 0)
+  const activeAlerts = (records.alert || []).filter((item) => {
+    const status = String(item.alertStatus ?? item.alert_status ?? item.status ?? '').toLowerCase()
+    return !['closed', 'resolved', '已关闭', '已处理', '已闭环'].some((value) => status.includes(value))
+  }).length
+  return [
+    { key: 'length', label: '管线资产总长', value: pipelineLengthM ? (pipelineLengthM / 1000).toFixed(1) : '0', unit: 'km', note: '资产台账 length_m 汇总', icon: 'pipeline', tone: 'blue' },
+    { key: 'facility', label: '设施记录', value: facilities, unit: '处', note: '资产与井盖真实记录', icon: 'device', tone: 'green' },
+    { key: 'today-alert', label: '今日预警', value: todayAlarmCount.value, unit: '起', note: '按事件时间统计', icon: 'alarm', tone: 'orange' },
+    { key: 'active-alert', label: '未闭环预警', value: activeAlerts, unit: '起', note: '按接口处置状态统计', icon: 'alarm', tone: activeAlerts ? 'red' : 'green' },
+    { key: 'risk', label: '风险记录', value: risks, unit: '处', note: '道路风险接口记录', icon: 'risk', tone: risks ? 'orange' : 'blue' }
+  ]
 })
 
 // ---------------------------------------------------------------------------
@@ -489,15 +774,17 @@ async function createMap() {
     }
     // 正常点击：关闭抽屉，清除高亮
     drawerVisible.value = false
+    try { map.closeInfoWindow?.() } catch { /* noop */ }
     clearHighlight()
   })
 
-  // 缩放事件：控制显隐、聚合、网络节点、标签
+  // 缩放事件：控制显隐、聚合、网络节点、标签、管线线宽
   map.addEventListener('zoomend', () => {
     applyZoomVisibility()
     applyLabels()
     renderClusters()
     renderNetworkNodes()
+    updateLineWeights()
   })
 
   for (const cfg of GIS_LAYERS) {
@@ -535,39 +822,100 @@ function isTrunkPipeline(props) {
   return Number(props.diameter ?? props.pipeDiameter ?? 0) >= 250
 }
 
-/** 管线样式 */
-function getPipelineStyle(cfg, props, state = 'default') {
+/**
+ * 管线样式（颜色 = 管线类型，风险/状态只通过 线宽/描边/Marker 表达，
+ * 避免"红色到底是燃气管线还是高风险"的语义混乱）。
+ * 线宽根据当前 zoom 动态调整：zoom 小时细线避免重叠，zoom 大时加粗让管线清晰。
+ */
+function getPipelineStyle(cfg, props, state = 'default', zoom = 13) {
   const status = props._status || 'normal'
   const trunk = isTrunkPipeline(props)
-  const baseColor = cfg.color
-  const color = status === 'danger'
-    ? '#C94F46'
-    : status === 'warning' ? '#D18B3C' : baseColor
-  const normalWeight = trunk ? 6 : 4
-  const weight = state === 'selected' ? normalWeight + 4 : normalWeight + (status === 'danger' ? 2 : status === 'warning' ? 1 : 0)
-  const opacity = status === 'danger' ? 0.92 : status === 'warning' ? 0.82 : (trunk ? 0.74 : 0.64)
+  // 颜色 = 管线类型固定色（燃气管=土红、给水管=蓝、废水管=灰绿）
+  const color = cfg.color
+
+  // 主干与支线保持轻量层级，避免再次覆盖真实道路底图。
+  const zoomFactor = Math.max(0.78, Math.min(1.22, 0.78 + (zoom - 11) * 0.055))
+  let baseWeight = (trunk ? 2.4 : 1.55) * zoomFactor
+  if (status === 'danger') baseWeight += 0.75
+  if (status === 'warning') baseWeight += 0.35
+  if (state === 'selected') baseWeight += 1.4
+
+  const weight = Math.max(1.2, Math.round(baseWeight * 10) / 10)
+  const opacity = status === 'danger' ? 0.86 : status === 'warning' ? 0.72 : (trunk ? 0.62 : 0.5)
 
   return {
     strokeColor: color,
     strokeWeight: weight,
-    strokeOpacity: state === 'hover' ? Math.min(1, opacity + 0.18) : opacity
+    strokeOpacity: state === 'hover' ? Math.min(1, opacity + 0.12) : opacity,
+    // 风险描边配置
+    dangerStroke: status === 'danger',   // 白色描边 + 加粗
+    warningStroke: status === 'warning'   // 细白描边
+  }
+}
+
+/** 更新所有已渲染管线的 strokeWeight（zoom 变化时调用） */
+function updateLineWeights() {
+  if (!map) return
+  const zoom = map.getZoom()
+  for (const cfg of GIS_LAYERS.filter((c) => c.geometry === 'line')) {
+    const items = overlayMap[cfg.key] || []
+    for (const item of items) {
+      const bundle = item.bundle
+      if (!bundle) continue
+      const { feature, cfg: bundleCfg, overlays } = bundle
+      const style = getPipelineStyle(bundleCfg, feature.properties, 'default', zoom)
+      const casingWeightOffset = style.dangerStroke ? 3.5 : style.warningStroke ? 1.8 : 1
+      const casingOpacity = style.dangerStroke ? 0.2 : style.warningStroke ? 0.12 : 0.08
+      for (const entry of overlays) {
+        if (!(entry.overlay instanceof BMap.Polyline)) continue
+        if (entry.layer === 'casing') {
+          entry.overlay.setStrokeStyle({
+            color: style.dangerStroke ? '#C9433B' : style.strokeColor,
+            weight: style.strokeWeight + casingWeightOffset,
+            opacity: casingOpacity
+          })
+        } else if (entry.layer === 'main') {
+          entry.overlay.setStrokeStyle({
+            color: style.strokeColor,
+            weight: style.strokeWeight,
+            opacity: style.strokeOpacity
+          })
+        }
+      }
+    }
   }
 }
 
 /** 获取点位视觉参数 */
 function getMarkerVisual(cfg, props) {
-  const status = props._status || 'normal'
-  const isAlert = cfg.key === 'alert'
-  const isRisk = cfg.key === 'hazard'
-  const size = status === 'danger' ? (isAlert || isRisk ? 15 : 13) : status === 'warning' ? 11 : (isAlert ? 10 : 8)
+  const risk = props._risk || 'normal'
+  const size = { high: 14, elevated: 12, medium: 10, low: 9, normal: 7 }[risk] || 7
   return { size }
+}
+
+function itemOverlays(item) {
+  const bundleOverlays = item?.bundle?.overlays?.map((entry) => entry.overlay).filter(Boolean)
+  return bundleOverlays?.length ? bundleOverlays : (item?.overlay ? [item.overlay] : [])
+}
+
+function removeItemOverlays(item) {
+  for (const overlay of itemOverlays(item)) {
+    try { map.removeOverlay(overlay) } catch { /* noop */ }
+  }
+}
+
+function addItemOverlays(item) {
+  const current = map.getOverlays?.() || []
+  for (const overlay of itemOverlays(item)) {
+    try { if (!current.includes(overlay)) map.addOverlay(overlay) } catch { /* noop */ }
+  }
 }
 
 /** 移除某图层所有覆盖物 */
 function clearOverlayGroup(key) {
   if (!map) return
   for (const item of overlayMap[key] || []) {
-    try { map.removeOverlay(item.overlay) } catch { /* noop */ }
+    removeItemOverlays(item)
   }
   overlayMap[key] = []
 }
@@ -599,37 +947,31 @@ function collectAllCoords() {
   return { coordsList, mapping }
 }
 
-/** 构建管线覆盖物（含白色描边 + 主色线 + 危险态光晕），接收已转换好的 BD09 坐标 */
+/**
+ * 构建管线覆盖物：白色描边（表达风险程度） + 主色线（固定为管线类型色）。
+ * 风险只通过「主色线加粗 + 白色描边加粗」表达，不再改变管线本身颜色，
+ * 避免"红色到底是燃气管线还是高风险"的语义混乱。
+ */
 function buildLine(cfg, feature, bdCoords) {
   const bdPoints = bdCoords.map(([lng, lat]) => new BMap.Point(lng, lat))
-  const style = getPipelineStyle(cfg, feature.properties)
-  const isDanger = feature.properties._status === 'danger'
+  const zoom = map ? map.getZoom() : 13
+  const style = getPipelineStyle(cfg, feature.properties, 'default', zoom)
 
   const overlays = []
 
-  // 1. 危险态光晕
-  if (isDanger) {
-    const glow = new BMap.Polyline(bdPoints, {
-      strokeColor: '#C94F46',
-      strokeWeight: style.strokeWeight + 8,
-      strokeOpacity: 0.16,
-      strokeLineCap: 'round',
-      strokeLineJoin: 'round'
-    })
-    overlays.push({ overlay: glow })
-  }
-
-  // 2. 白色描边
+  // 1. 轻量底描边；只有异常管段形成很弱的风险 glow。
+  const casingWeightOffset = style.dangerStroke ? 3.5 : style.warningStroke ? 1.8 : 1
+  const casingOpacity = style.dangerStroke ? 0.2 : style.warningStroke ? 0.12 : 0.08
   const casing = new BMap.Polyline(bdPoints, {
-    strokeColor: '#FFFFFF',
-    strokeWeight: style.strokeWeight + 2,
-    strokeOpacity: 0.22,
+    strokeColor: style.dangerStroke ? '#C9433B' : style.strokeColor,
+    strokeWeight: style.strokeWeight + casingWeightOffset,
+    strokeOpacity: casingOpacity,
     strokeLineCap: 'round',
     strokeLineJoin: 'round'
   })
-  overlays.push({ overlay: casing, feature, cfg, props: feature.properties, bdCoords })
+  overlays.push({ overlay: casing, layer: 'casing' })
 
-  // 3. 主色线
+  // 2. 主色线（固定为 cfg.color = 管线类型色）
   const main = new BMap.Polyline(bdPoints, {
     strokeColor: style.strokeColor,
     strokeWeight: style.strokeWeight,
@@ -637,7 +979,7 @@ function buildLine(cfg, feature, bdCoords) {
     strokeLineCap: 'round',
     strokeLineJoin: 'round'
   })
-  overlays.push({ overlay: main, feature, cfg, props: feature.properties, bdCoords })
+  overlays.push({ overlay: main, layer: 'main', feature, cfg, props: feature.properties, bdCoords })
 
   for (const { overlay } of overlays) {
     if (!(overlay instanceof BMap.Polyline)) continue
@@ -679,10 +1021,12 @@ function buildPoint(cfg, feature, bdLon, bdLat) {
   })
 
   marker.addEventListener('mouseover', () => {
-    marker.showInfoWindow?.(new BMap.InfoWindow(
-      `<div style="padding:4px 8px;font-size:12px;">${feature.properties._title}</div>`,
-      { width: 180, height: 24, title: '', enableMessage: false }
-    ), bdPoint)
+    try { marker.setTop?.(true) } catch { /* noop */ }
+  })
+  marker.addEventListener('mouseout', () => {
+    if (highlightOverlay !== marker) {
+      try { marker.setTop?.(false) } catch { /* noop */ }
+    }
   })
 
   return { overlay: marker, feature, cfg, props: feature.properties, bdCoords: [bdLon, bdLat] }
@@ -690,16 +1034,26 @@ function buildPoint(cfg, feature, bdLon, bdLat) {
 
 /** 更新管线状态样式 */
 function updateLineState(feature, state, overlays) {
-  const cfg = overlays[1]?.cfg
-  const props = overlays[1]?.props
+  // 从 layer === 'main' 的覆盖物上取 cfg / props
+  const mainEntry = overlays.find((e) => e.layer === 'main')
+  const cfg = mainEntry?.cfg
+  const props = mainEntry?.props
   if (!cfg || !props) return
   const style = getPipelineStyle(cfg, props, state)
-  for (const item of overlays) {
-    const overlay = item.overlay
-    if (overlay instanceof BMap.Polyline) {
-      const strokeColor = overlay.getStrokeColor()
-      if (strokeColor === '#FFFFFF') continue
-      if (strokeColor === '#C94F46' && feature.properties._status === 'danger') continue
+
+  for (const entry of overlays) {
+    const overlay = entry.overlay
+    if (!(overlay instanceof BMap.Polyline)) continue
+    if (entry.layer === 'casing') {
+      // hover 时白色描边也略加粗，增强交互反馈
+      const casingWeightOffset = style.dangerStroke ? 3.8 : style.warningStroke ? 2.2 : 1.3
+      const casingOpacity = state === 'hover' ? 0.28 : (style.dangerStroke ? 0.2 : style.warningStroke ? 0.12 : 0.08)
+      overlay.setStrokeStyle({
+        color: style.dangerStroke ? '#C9433B' : style.strokeColor,
+        weight: style.strokeWeight + casingWeightOffset,
+        opacity: casingOpacity
+      })
+    } else if (entry.layer === 'main') {
       overlay.setStrokeStyle({
         color: style.strokeColor,
         weight: style.strokeWeight,
@@ -794,17 +1148,13 @@ function applyZoomVisibility() {
     if (!visible[cfg.key]) {
       // 隐藏：全部移除
       for (const item of overlayMap[cfg.key] || []) {
-        try { map.removeOverlay(item.overlay) } catch { /* noop */ }
+        removeItemOverlays(item)
       }
       continue
     }
     // 重新添加（如果之前因为隐藏被移除）
     for (const item of overlayMap[cfg.key] || []) {
-      try {
-        if (!map.getOverlays().includes(item.overlay)) {
-          map.addOverlay(item.overlay)
-        }
-      } catch { /* noop */ }
+      addItemOverlays(item)
     }
     // 再次过滤：按缩放级别控制单要素显隐
     const showList = []
@@ -815,14 +1165,10 @@ function applyZoomVisibility() {
       else hideList.push(item)
     }
     for (const item of hideList) {
-      try { map.removeOverlay(item.overlay) } catch { /* noop */ }
+      removeItemOverlays(item)
     }
     for (const item of showList) {
-      try {
-        if (!map.getOverlays().includes(item.overlay)) {
-          map.addOverlay(item.overlay)
-        }
-      } catch { /* noop */ }
+      addItemOverlays(item)
     }
   }
 }
@@ -966,7 +1312,12 @@ function applyLabels() {
   const zoom = map.getZoom()
   for (const cfg of GIS_LAYERS) {
     if (cfg.labelZoom > 90) continue
-    const show = zoom >= cfg.labelZoom
+
+    // 标签只在高风险点位 + 足够高的缩放级别才显示，避免地图被白色文字淹没。
+    // 规则：
+    //   - 管线 (line)：永远不显示文字标签（已通过 labelZoom=99 屏蔽）
+    //   - 点位 (point)：只给 danger / warning 状态的要素显示标签，
+    //     normal 状态的 asset / manhole 完全不显示文字。
     for (const item of overlayMap[cfg.key] || []) {
       const overlay = item.overlay
       const props = item.props
@@ -978,30 +1329,25 @@ function applyLabels() {
         overlay._gisLabel = null
       }
 
-      if (!show) continue
-      // 只给点位和管线主线加标签，避免同一管线多条叠加
       if (!(overlay instanceof BMap.Marker) && !(overlay instanceof BMap.Polyline)) continue
-
-      let labelPoint
-      if (overlay instanceof BMap.Marker) {
-        labelPoint = overlay.getPosition()
-      } else {
-        const pts = overlay.getPath()
-        if (!pts || pts.length === 0) continue
-        labelPoint = pts[Math.floor(pts.length / 2)]
-      }
+      // 管线不在此处显示标签（labelZoom 已经是 99）
+      if (overlay instanceof BMap.Polyline) continue
+      // 点位：只有 danger / warning 状态才显示标签，且 zoom >= labelZoom
+      if (props._status !== 'danger' && props._status !== 'warning') continue
+      if (zoom < cfg.labelZoom) continue
 
       const label = new BMap.Label(props._title || '', {
-        position: labelPoint,
-        offset: new BMap.Size(0, -20)
+        position: overlay.getPosition(),
+        offset: new BMap.Size(0, -24)
       })
+      const statusColor = props._status === 'danger' ? '#C84740' : '#D59435'
       label.setStyle({
         padding: '2px 7px',
         fontSize: '11px',
         fontWeight: '500',
         color: 'var(--app-text-1, #30353B)',
-        backgroundColor: 'rgba(255,255,255,0.92)',
-        border: '1px solid rgba(84,101,116,0.18)',
+        backgroundColor: 'rgba(255,255,255,0.94)',
+        border: `1px solid ${statusColor}40`,
         borderRadius: '4px',
         boxShadow: '0 3px 10px rgba(42,54,64,0.12)'
       })
@@ -1014,9 +1360,48 @@ function applyLabels() {
 // ---------------------------------------------------------------------------
 // 选中 / 高亮
 // ---------------------------------------------------------------------------
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function openFeatureInfoWindow(cfg, feature, coords) {
+  if (!map || cfg.geometry !== 'point' || !Array.isArray(coords)) return
+  const props = feature.properties || {}
+  const level = RISK_LEVELS[props._risk] || RISK_LEVELS.normal
+  const rows = cfg.fields
+    .map((field) => {
+      const keys = Array.isArray(field.prop) ? field.prop : [field.prop]
+      const value = pickValue(props, keys)
+      if (value === null) return null
+      return `<div class="gis-popup__row"><span>${escapeHtml(field.label)}</span><b>${escapeHtml(value)}${field.unit ? ` ${escapeHtml(field.unit)}` : ''}</b></div>`
+    })
+    .filter(Boolean)
+    .slice(0, 5)
+  const rawCoords = props._coords
+  if (Array.isArray(rawCoords)) {
+    rows.push(`<div class="gis-popup__row"><span>坐标</span><b>${Number(rawCoords[0]).toFixed(5)}, ${Number(rawCoords[1]).toFixed(5)}</b></div>`)
+  }
+  const html = `<div class="gis-popup">
+    <div class="gis-popup__head"><i style="background:${level.color}"></i><strong>${escapeHtml(props._title || cfg.label)}</strong></div>
+    <div class="gis-popup__level" style="color:${level.color};background:${level.color}14">${escapeHtml(level.label)}</div>
+    <div class="gis-popup__rows">${rows.join('')}</div>
+  </div>`
+  const point = new BMap.Point(Number(coords[0]), Number(coords[1]))
+  map.openInfoWindow(new BMap.InfoWindow(html, { width: 280, title: '', enableMessage: false }), point)
+}
+
 function selectFeature(cfg, feature, overlay, coords) {
   clearHighlight()
   const props = feature.properties
+  const item = overlayMap[cfg.key]?.find((entry) => entry.feature === feature)
+  const pointCoords = cfg.geometry === 'point'
+    ? (Array.isArray(coords) ? coords : item?.bdCoords)
+    : item?.bdCoords?.[Math.floor((item?.bdCoords?.length || 1) / 2)]
   selected.value = {
     key: cfg.key,
     cfg,
@@ -1024,14 +1409,15 @@ function selectFeature(cfg, feature, overlay, coords) {
     title: props._title,
     area: props._area,
     status: props._status,
-    latlng: coords ? [coords[0], coords[1]] : (props._coords ? [props._coords[1], props._coords[0]] : null)
+    risk: props._risk || 'normal',
+    latlng: pointCoords ? [Number(pointCoords[0]), Number(pointCoords[1])] : null,
+    sourceCoords: Array.isArray(props._coords) ? [Number(props._coords[0]), Number(props._coords[1])] : null
   }
 
   // 高亮覆盖物
   if (cfg.geometry === 'line') {
     // 找到主色线的 bdCoords
     let bdLine = null
-    const item = overlayMap[cfg.key]?.find((x) => x.feature === feature)
     if (item) bdLine = item.bdCoords
     if (bdLine) {
       highlightOverlay = overlay
@@ -1039,7 +1425,7 @@ function selectFeature(cfg, feature, overlay, coords) {
       const bdPoints = bdLine.map(([lng, lat]) => new BMap.Point(lng, lat))
       selectedOverlay = new BMap.Polyline(bdPoints, {
         strokeColor: '#315B78',
-        strokeWeight: getPipelineStyle(cfg, props).strokeWeight + 6,
+        strokeWeight: getPipelineStyle(cfg, props).strokeWeight + 4,
         strokeOpacity: 0.24,
         strokeLineCap: 'round',
         strokeLineJoin: 'round'
@@ -1048,7 +1434,8 @@ function selectFeature(cfg, feature, overlay, coords) {
     }
   } else {
     highlightOverlay = overlay
-    const [lng, lat] = coords
+    const [lng, lat] = pointCoords
+    try { overlay.setTop?.(true) } catch { /* noop */ }
     selectedOverlay = new BMap.Circle(new BMap.Point(lng, lat), getMarkerVisual(cfg, props).size + 8, {
       strokeColor: '#315B78',
       strokeWeight: 2,
@@ -1058,17 +1445,36 @@ function selectFeature(cfg, feature, overlay, coords) {
       enableEditing: false
     })
     map.addOverlay(selectedOverlay)
+    openFeatureInfoWindow(cfg, feature, pointCoords)
   }
 
   drawerVisible.value = true
 }
 
 function clearHighlight() {
+  try { highlightOverlay?.setTop?.(false) } catch { /* noop */ }
   if (selectedOverlay) {
     try { map.removeOverlay(selectedOverlay) } catch { /* noop */ }
     selectedOverlay = null
   }
   highlightOverlay = null
+}
+
+function locateAlarm(alarm) {
+  if (!alarm?.feature) {
+    ElMessage.warning('该告警接口未提供坐标，也没有匹配到真实设备点位')
+    return
+  }
+  const cfg = LAYER_MAP.alert
+  const item = overlayMap.alert?.find((entry) => entry.feature === alarm.feature)
+  if (!item?.bdCoords) {
+    ElMessage.warning('该告警暂时无法定位')
+    return
+  }
+  visible.alert = true
+  applyZoomVisibility()
+  map.centerAndZoom(new BMap.Point(item.bdCoords[0], item.bdCoords[1]), 16)
+  selectFeature(cfg, alarm.feature, item.overlay, item.bdCoords)
 }
 
 function onDrawerClosed() {
@@ -1099,6 +1505,8 @@ async function reload() {
     const result = await fetchAllLayers()
     for (const key of Object.keys(collections)) delete collections[key]
     Object.assign(collections, result.collections)
+    for (const key of Object.keys(records)) delete records[key]
+    Object.assign(records, result.records)
     for (const key of Object.keys(sources)) delete sources[key]
     Object.assign(sources, result.sources)
     updatedAt.value = formatTime(result.loadedAt)
@@ -1106,6 +1514,13 @@ async function reload() {
     selected.value = null
     drawerVisible.value = false
     await renderAll()
+    // 首次进入页面时自动聚焦安塞区检测区域；之后不再自动干预，
+    // 用户可以自由拖动/缩放地图；手动触发 fitToAnsei 的入口是「回到安塞区」按钮
+    if (firstEntry) {
+      firstEntry = false
+      await nextTick()
+      setTimeout(() => fitToAnsei(15), 200)
+    }
   } catch (err) {
     console.error('[GIS] 数据加载失败:', err)
     loadError.value = 'GIS 数据加载失败，请检查后端服务或网关连通性'
@@ -1206,27 +1621,25 @@ function selectSuggestion(item) {
 }
 
 function fitToMatches() {
-  let hasAny = false
-  let firstPoint = null
+  let match = null
   for (const cfg of GIS_LAYERS) {
     for (const feature of filteredFeatures(cfg.key)) {
-      hasAny = true
-      if (!firstPoint) {
-        if (cfg.geometry === 'line') {
-          const bdLine = overlayMap[cfg.key]?.find((x) => x.feature === feature)?.bdCoords
-          if (bdLine && bdLine.length > 0) firstPoint = new BMap.Point(bdLine[0][0], bdLine[0][1])
-        } else {
-          const bdCoords = overlayMap[cfg.key]?.find((x) => x.feature === feature)?.bdCoords
-          if (bdCoords) firstPoint = new BMap.Point(bdCoords[0], bdCoords[1])
-        }
-      }
+      const item = overlayMap[cfg.key]?.find((entry) => entry.feature === feature)
+      if (item?.bdCoords) { match = { cfg, feature, item }; break }
     }
+    if (match) break
   }
-  if (firstPoint) {
-    map.centerAndZoom(firstPoint, 16)
-  } else if (!hasAny) {
-    // 无匹配，保持原位，不强制 fitBounds（百度的 getViewport 接口用法不同）
+  if (!match) {
+    ElMessage.info('未找到可定位的业务要素')
+    return
   }
+  visible[match.cfg.key] = true
+  applyZoomVisibility()
+  const coords = match.cfg.geometry === 'line'
+    ? match.item.bdCoords[Math.floor(match.item.bdCoords.length / 2)]
+    : match.item.bdCoords
+  map.centerAndZoom(new BMap.Point(coords[0], coords[1]), match.cfg.geometry === 'line' ? 15 : 16)
+  selectFeature(match.cfg, match.feature, match.item.overlay, coords)
 }
 
 function resetFilters() {
@@ -1407,6 +1820,25 @@ function setupViewportWatcher() {
   if (viewportQuery.addEventListener) viewportQuery.addEventListener('change', viewportHandler)
   else viewportQuery.addListener(viewportHandler)
 }
+
+// 路由变化：当从其他页面切回 /gis 时，重新聚焦安塞区 + 刷新地图尺寸
+// 防止地图从 display:none 状态恢复后 canvas 尺寸错误
+watch(
+  () => route.path,
+  (newPath, oldPath) => {
+    if (newPath === '/gis' && oldPath !== '/gis') {
+      // 从非 /gis 页面切换回来，重置 firstEntry 让 fitToAnsei 生效
+      firstEntry = true
+      if (map) refreshMapAfterActivate()
+    }
+  }
+)
+
+// keep-alive 场景：组件被激活时也需要刷新地图尺寸（即使当前没有 keep-alive 也保留作保险）
+onActivated(() => {
+  firstEntry = true
+  if (map) refreshMapAfterActivate()
+})
 
 onMounted(async () => {
   setupViewportWatcher()
@@ -1594,6 +2026,24 @@ onBeforeUnmount(() => {
   border-right-width: 0;
 }
 
+.gis-workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  background: var(--app-bg, #f4f6f8);
+  overflow: hidden;
+}
+
+.gis-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 22vw, 320px);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
 /* ---------- 左侧图层树 ---------- */
 .gis-panel {
   display: flex;
@@ -1650,14 +2100,33 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
   background-color: #EAECEF;
+  border: 1px solid var(--app-border, #e1e6eb);
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(39, 54, 68, 0.05);
 }
 
+/*
+ * 高清适配：百度 BMap v3.0 是栅格瓦片（256x256），高 DPI 屏幕会糊。
+ * 以下处理：
+ * 1. translateZ(0) 把地图推入 GPU 合成层，防止浏览器子像素渲染模糊
+ * 2. -webkit-font-smoothing 让覆盖物文字更锐利
+ * 3. image-rendering: -webkit-optimize-contrast 让瓦片缩放时走清晰算法
+ */
 .gis-mapwrap .gis-map {
   position: absolute;
   inset: 0;
   z-index: 0;
   width: 100%;
   height: 100%;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.gis-mapwrap .gis-map img,
+.gis-mapwrap .gis-map canvas {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
 
 /* 百度地图控件样式 */
@@ -1670,6 +2139,45 @@ onBeforeUnmount(() => {
   box-shadow: var(--app-shadow-float) !important;
   margin: 14px 14px 0 0 !important;
 }
+/* 清除百度缩放控件的 transform 模糊副作用 */
+.gis-mapwrap .BMap_zm_ctrl,
+.gis-mapwrap .BMap_zm_ctrl * {
+  transform: none !important;
+}
+
+/* 百度信息窗：只展示真实字段，使用平台统一的浅色卡片语言。 */
+.gis-mapwrap .BMap_pop > div,
+.gis-mapwrap .BMap_pop > img { filter: none !important; }
+.gis-popup { padding: 5px 4px 2px; color: var(--app-text-1, #2b3138); font-family: var(--app-font-family, sans-serif); }
+.gis-popup__head { display: flex; align-items: center; gap: 8px; padding-right: 18px; }
+.gis-popup__head i { flex: none; width: 9px; height: 9px; border-radius: 50%; }
+.gis-popup__head strong { overflow: hidden; font-size: 14px; font-weight: 650; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.gis-popup__level { display: inline-block; margin: 9px 0 5px; padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+.gis-popup__rows { border-top: 1px solid var(--app-border, #edf0f3); }
+.gis-popup__row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--app-border, #f0f2f4); font-size: 11px; }
+.gis-popup__row span { flex: none; color: var(--app-text-4, #929aa4); }
+.gis-popup__row b { overflow: hidden; color: var(--app-text-2, #4d5660); font-weight: 550; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 回到安塞区按钮（复用 gis-zoom-btn 风格） */
+.gis-home-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background-color: rgba(255, 255, 255, 0.94);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  backdrop-filter: blur(16px) saturate(1.6);
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  color: var(--app-text-2);
+  cursor: pointer;
+  box-shadow: var(--app-shadow-float);
+  transition: background 0.15s, color 0.15s, transform 0.12s;
+}
+.gis-home-btn:hover { background-color: var(--app-hover); color: var(--app-primary); }
+.gis-home-btn:active { transform: scale(0.94); }
 
 /* 导航浮层 */
 .gis-nav-box {
@@ -1853,38 +2361,77 @@ onBeforeUnmount(() => {
   border-color: rgba(255, 59, 48, 0.28);
   background-color: rgba(255, 255, 255, 0.96);
 }
+.gis-state--notice {
+  top: auto;
+  bottom: 16px;
+  color: #6e7782;
+  background: rgba(255, 255, 255, 0.9);
+}
 
-/* 左下角图例 */
+/* 左下角图例：管线类型 + 风险等级 两组并排 */
 .gis-legend {
   position: absolute;
   z-index: 1000;
   left: 14px;
-  bottom: 22px;
+  bottom: 50px;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 7px 14px;
-  font-size: 12px;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px 12px;
+  font-size: 11px;
   color: var(--app-text-2);
-  background-color: rgba(255, 255, 255, 0.88);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  backdrop-filter: blur(16px) saturate(1.6);
+  background-color: rgba(255, 255, 255, 0.90);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  backdrop-filter: blur(18px) saturate(1.6);
   border: 1px solid var(--app-border);
-  border-radius: var(--app-radius-tag);
-  box-shadow: var(--app-shadow-float);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(42, 54, 64, 0.10);
   pointer-events: none;
-  white-space: nowrap;
+  user-select: none;
+}
+.gis-legend__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 88px;
+}
+.gis-legend__title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--app-text-3, #8E96A0);
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--app-border);
+  margin-bottom: 2px;
+}
+.gis-legend__divider {
+  align-self: stretch;
+  width: 1px;
+  background-color: var(--app-border);
+  margin: 2px 0;
 }
 .gis-legend__item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
+  line-height: 1.4;
 }
+/* 管线类型色条（小短线段） */
+.gis-legend__line {
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.9);
+}
+/* 风险等级圆点 */
 .gis-legend__dot {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  box-shadow: 0 0 0 2px #fff;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.9);
+  flex-shrink: 0;
 }
 
 /* ===================== 详情抽屉 ===================== */
@@ -2054,8 +2601,14 @@ onBeforeUnmount(() => {
 }
 
 /* ===================== 响应式 ===================== */
+@media (max-width: 1440px) {
+  .gis-body { grid-template-columns: 230px minmax(0, 1fr); }
+  .gis-stage { grid-template-columns: minmax(0, 1fr) 260px; }
+}
+
 @media (max-width: 1280px) {
-  .gis-body { grid-template-columns: 250px minmax(0, 1fr); }
+  .gis-body { grid-template-columns: 220px minmax(0, 1fr); }
+  .gis-stage { grid-template-columns: minmax(0, 1fr) 260px; }
   .gis-toolbar__search { flex-basis: 220px; }
   .gis-toolbar__select { flex-basis: 118px; }
 }
@@ -2073,6 +2626,9 @@ onBeforeUnmount(() => {
   .gis-toolbar__meta { display: none; }
   .gis-toolbar__mobile { display: inline-flex; }
   .gis-body { grid-template-columns: 0px minmax(0, 1fr); }
+  .gis-workspace { padding: 8px; }
+  .gis-stage { grid-template-columns: minmax(0, 1fr); }
+  .gis-business { display: none; }
   .gis-nav-box {
     left: 14px;
     right: 14px;

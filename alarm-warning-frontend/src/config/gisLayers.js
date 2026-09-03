@@ -58,6 +58,30 @@ export const STATUS_OPTIONS = [
   { value: 'danger', label: '高风险' }
 ]
 
+/** 地图点位与右侧统计共用的四级风险色；正常设备单独使用 normal。 */
+export const RISK_LEVELS = {
+  high: { key: 'high', label: '高风险', color: '#C9433B' },
+  elevated: { key: 'elevated', label: '较高风险', color: '#D97732' },
+  medium: { key: 'medium', label: '中风险', color: '#D5A126' },
+  low: { key: 'low', label: '低风险', color: '#397EBE' },
+  normal: { key: 'normal', label: '正常', color: '#668477' }
+}
+
+/** 兼容各服务现有字段，把原始业务等级归一化为四级风险。 */
+export function riskLevelOf(item, fallbackStatus = 'normal') {
+  const raw = String(
+    item?.warning_level ?? item?.warningLevel ?? item?.alertLevel ??
+    item?.risk_level ?? item?.riskLevel ?? item?.level ?? ''
+  ).trim().toLowerCase()
+  if (raw.includes('red') || raw.includes('红') || raw.includes('severe') || raw.includes('极高')) return 'high'
+  if (raw.includes('orange') || raw.includes('橙') || raw === '高' || raw.includes('高风险')) return 'elevated'
+  if (raw.includes('yellow') || raw.includes('黄') || raw === '中' || raw.includes('中风险')) return 'medium'
+  if (raw.includes('blue') || raw.includes('蓝') || raw === '低' || raw.includes('低风险')) return 'low'
+  if (fallbackStatus === 'danger') return 'high'
+  if (fallbackStatus === 'warning') return 'medium'
+  return 'normal'
+}
+
 const ALERT_LEVEL_STATUS = {
   red: 'danger',
   orange: 'danger',
@@ -211,12 +235,13 @@ export const GIS_LAYERS = [
     route: '/utility-tunnel',
     routeLabel: '综合管廊详情',
     fields: [
-      { label: '井盖编号', prop: ['id'] },
-      { label: '井盖名称', prop: ['name'] },
+      { label: '井盖编号', prop: ['code', 'id'] },
+      { label: '位置', prop: ['location', 'name'] },
+      { label: '道路', prop: ['road_name', 'roadName'] },
       { label: '所属类型', prop: ['type'] },
       { label: '运行状态', prop: ['status'], tone: true }
     ],
-    titleOf: (p) => p.name || p.id || '智能井盖',
+    titleOf: (p) => p.location || p.name || p.code || p.id || '智能井盖',
     statusOf: (p) => runStatusOf(p.status),
     iconKindOf: (p) => {
       const t = String(p.type || '')
@@ -237,11 +262,13 @@ export const GIS_LAYERS = [
     route: '/road-hazard',
     routeLabel: '道路塌陷详情',
     fields: [
-      { label: '风险点编号', prop: ['id'] },
+      { label: '风险点编号', prop: ['code', 'id'] },
+      { label: '道路', prop: ['road_name', 'roadName'] },
       { label: '位置描述', prop: ['location', 'address'] },
       { label: '风险等级', prop: ['risk_level', 'riskLevel'], tone: true },
-      { label: '沉降值', prop: ['settlement'], unit: 'mm' },
-      { label: '影响半径', prop: ['impact_radius', 'impactRadius'], unit: 'm' }
+      { label: '风险评分', prop: ['risk_score', 'riskScore'] },
+      { label: '空洞深度', prop: ['depth_m', 'depth'], unit: 'm' },
+      { label: '处置状态', prop: ['status'], tone: true }
     ],
     titleOf: (p) => p.location || p.address || p.id || '塌陷风险点',
     statusOf: (p) => riskStatusOf(p.risk_level ?? p.riskLevel),
@@ -258,17 +285,19 @@ export const GIS_LAYERS = [
     route: '/asset',
     routeLabel: '资产管理详情',
     fields: [
-      { label: '资产编号', prop: ['id', 'asset_id', 'assetId'] },
-      { label: '设备类型', prop: ['device_type', 'deviceType'] },
+      { label: '资产编号', prop: ['asset_code', 'id', 'asset_id', 'assetId'] },
+      { label: '管段名称', prop: ['segment_name', 'name'] },
+      { label: '设备类型', prop: ['device_type', 'deviceType', 'material'] },
       { label: '在线状态', prop: ['online_status', 'onlineStatus'], tone: true },
-      { label: '资产状态', prop: ['asset_status', 'assetStatus'], tone: true }
+      { label: '资产状态', prop: ['asset_status', 'assetStatus', 'status'], tone: true },
+      { label: '安装位置', prop: ['location'] }
     ],
     titleOf: (p) => {
-      const type = p.device_type || p.deviceType
-      const id = p.id || p.asset_id || p.assetId
+      const type = p.device_type || p.deviceType || p.segment_name
+      const id = p.asset_code || p.id || p.asset_id || p.assetId
       return type && id ? `${type} · ${id}` : (type || id || '资产设备')
     },
-    statusOf: (p) => runStatusOf(p.online_status ?? p.onlineStatus),
+    statusOf: (p) => runStatusOf(p.online_status ?? p.onlineStatus ?? p.asset_status ?? p.assetStatus ?? p.status),
     iconKindOf: (p) => {
       const t = String(p.device_type || p.deviceType || '')
       if (t.includes('摄像')) return 'camera'
@@ -291,12 +320,14 @@ export const GIS_LAYERS = [
     fields: [
       { label: '预警编号', prop: ['id', 'alertEventCode', 'alert_event_code'] },
       { label: '预警级别', prop: ['warning_label', 'warningLabel', 'alertLevel'], tone: true },
+      { label: '设备编号', prop: ['device_id', 'deviceId'] },
       { label: '设备类型', prop: ['device_type', 'deviceType'] },
       { label: '所属区域', prop: ['area_id', 'areaId'] },
-      { label: '事件描述', prop: ['description', 'alertContent'] },
+      { label: '事件描述', prop: ['description', 'alertContent', 'rootCauseDesc', 'root_cause_desc'] },
+      { label: '处置状态', prop: ['alertStatus', 'alert_status', 'status'], tone: true },
       { label: '发生时间', prop: ['event_time', 'eventTime', 'eventTimestamp'] }
     ],
-    titleOf: (p) => p.warning_label || p.warningLabel || p.description || p.id || '预警事件',
+    titleOf: (p) => p.description || p.alertContent || p.rootCauseDesc || p.root_cause_desc || p.warning_label || p.warningLabel || p.alertEventCode || p.alert_event_code || p.id || '预警事件',
     statusOf: (p) => alertStatusOf(p.warning_level ?? p.warningLevel ?? p.alertLevel),
     iconKindOf: (p) => {
       const lv = String(p.warning_level ?? p.warningLevel ?? p.alertLevel ?? '').toLowerCase()

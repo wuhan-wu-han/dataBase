@@ -192,7 +192,8 @@ services:
     image: apache/spark:3.3.3
     container_name: spark-master
     ports:
-      - "8080:8080"
+      # 8080 留给统一 API 网关；Spark 管理界面改用宿主机 8081
+      - "8081:8080"
       - "7077:7077"
     environment:
       - SPARK_MODE=master
@@ -262,6 +263,27 @@ services:
       timeout: 5s
       retries: 5
 
+  platform-api:
+    build:
+      context: ..
+      dockerfile: src/python/Dockerfile
+    container_name: platform-api
+    ports:
+      - "8000:8000"
+    environment:
+      PLATFORM_DB_PATH: /app/src/python/data/platform.db
+      RBAC_JWT_SECRET: ${RBAC_JWT_SECRET:-change-this-rbac-secret-in-production}
+    volumes:
+      - ../src/python/data:/app/src/python/data
+    networks:
+      - bigdata
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
   api-gateway:
     build:
       context: ../api-gateway
@@ -271,10 +293,27 @@ services:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      RBAC_JWT_SECRET: ${RBAC_JWT_SECRET:-change-this-rbac-secret-in-production}
     networks:
       - bigdata
     depends_on:
       - kafka
+      - platform-api
+
+  frontend:
+    build:
+      context: ../alarm-warning-frontend
+      dockerfile: Dockerfile
+    container_name: alarm-warning-frontend
+    ports:
+      - "5173:80"
+    networks:
+      - bigdata
+    depends_on:
+      platform-api:
+        condition: service_healthy
+      api-gateway:
+        condition: service_started
 
 volumes:
   hadoop_namenode:

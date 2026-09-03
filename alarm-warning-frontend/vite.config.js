@@ -6,16 +6,21 @@ export default defineConfig({
   plugins: [vue()],
 
   server: {
+    host: '0.0.0.0',
     port: 5173,
     // 开发环境统一通过 api-gateway:8080 转发到各子服务
     // 生产环境由 Nginx 反向代理实现，前端使用相对路径 /api/...
     proxy: {
-      // 本地开发：/api/platform/** 直连 Python 综合服务(:8000)，去掉 /api/platform 前缀
-      // 等价于网关的 python-platform 路由 (StripPrefix=2)，无需启动 Java 网关即可看到真实数据
+      // 认证服务独立开发端口；容器部署时由 Nginx 转发至 platform-api:8000
+      '/auth': {
+        target: process.env.VITE_AUTH_TARGET || 'http://127.0.0.1:18001',
+        changeOrigin: true
+      },
+      // 本地开发：/api/platform/** 直连 Python 综合服务(:8000)，
+      // 后端已注册 /api/platform 前缀，Vite 代理直接透传，无需 rewrite
       '/api/platform': {
         target: 'http://localhost:8000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/platform/, '')
+        changeOrigin: true
       },
       // 市政井盖管控：直连 8005，去掉 /api/manhole-cover 前缀
       '/api/manhole-cover': {
