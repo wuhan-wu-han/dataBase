@@ -127,6 +127,13 @@ except ImportError:
     from src.python.asset_cost import router as asset_cost_router  # 项目根启动
 app.include_router(asset_cost_router)
 
+# 注册百度地图 Web API 代理路由（兼容两种启动方式）
+try:
+    from baidu_map_api import router as baidu_router            # cd src/python 后启动
+except ImportError:
+    from src.python.baidu_map_api import router as baidu_router  # 项目根启动
+app.include_router(baidu_router, prefix="/api/platform")
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================
