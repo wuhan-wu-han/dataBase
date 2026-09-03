@@ -106,6 +106,10 @@ body {
 
 #app {
   color: var(--app-text-1);
+  /* 允许被压缩，避免内部宽内容撑出页面级横向滚动。
+     这里不能加 overflow-x: hidden —— #app 不是 html/body，
+     给它设 overflow 会创建新的滚动容器，导致顶栏 position: sticky 失效。 */
+  min-width: 0;
 }
 
 /* 链接默认色 */
@@ -270,14 +274,20 @@ a:hover {
   font-weight: 600;
   color: var(--app-text-1);
   letter-spacing: -0.01em;
+  /* 窄列下不逐字换行，超长省略 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .card-title__badge {
+  flex-shrink: 0;
   font-size: 12px;
   color: var(--app-primary);
   background-color: var(--app-primary-soft);
   padding: 4px 12px;
   border-radius: var(--app-radius-tag);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 /* ===================== Apple 风格 Element Plus 控件覆写 ===================== */
@@ -376,4 +386,45 @@ a:hover {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* ===================== 布局防护：杜绝页面级横向滚动 ===================== */
+/*
+ * 栅格/Flex 子项默认 min-width:auto，会被内部不可压缩内容（大数字、宽表格）撑破，
+ * 这是「图表被挤成竖条 + 页面出现横向滚动」的根因。统一在这里放开压缩能力。
+ */
+.app-card {
+  min-width: 0;
+}
+.el-table {
+  min-width: 0;
+}
+/* 表格允许在自身内部横向滚动，不把滚动传导给页面 */
+.el-table__body-wrapper,
+.el-table__header-wrapper {
+  overflow-x: auto;
+}
+
+/* ===================== 小屏收紧 ===================== */
+@media (max-width: 768px) {
+  .app-card {
+    padding: 16px 18px;
+    border-radius: 18px;
+  }
+  .page-title {
+    font-size: 22px;
+  }
+  .page-header {
+    margin-bottom: 14px;
+    gap: 10px;
+  }
+  .card-title {
+    margin-bottom: 12px;
+  }
+  .card-title__text {
+    font-size: 15px;
+  }
+  .filter-bar {
+    gap: 10px 12px;
+  }
 }

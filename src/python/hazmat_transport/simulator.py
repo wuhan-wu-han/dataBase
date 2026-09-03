@@ -76,7 +76,112 @@ def _reset_alerts():
     _state["alerts"] = alerts
 
 
+def _init_db():
+    """初始化数据库。若所有集合为空则注入种子，否则从 store 加载覆盖内存。"""
+    try:
+        from . import store as _store
+        _store.init_db()
+        # 检查是否空库
+        media_count = _count_table(_store.HazmatMedia)
+        route_count = _count_table(_store.HazmatRoute)
+        if media_count == 0 and route_count == 0:
+            _seed_hazmat()
+        else:
+            _load_all_collections()
+    except Exception as exc:
+        print("[hazmat] DB 初始化失败：%s" % exc)
+
+
+def _count_table(model_cls):
+    try:
+        from persistence import SessionLocal
+        db = SessionLocal()
+        c = db.query(model_cls).count()
+        db.close()
+        return c
+    except Exception:
+        return 0
+
+
+def _seed_hazmat():
+    """空库时注入种子数据"""
+    from . import store as _store
+    for m in seed_media():
+        _store.create_media({
+            "media_id": m["media_id"], "name": m["name"],
+            "hw_code": m["hw_code"], "media_type": m["media_type"],
+            "concentration_mgL": m["concentration_mgL"],
+            "threshold_concentration": m["threshold_concentration"],
+            "source": m["source"], "last_sample": m["last_sample"],
+            "status": m["status"], "pipeline_id": m.get("pipeline_id"),
+            "temperature": m.get("temperature"), "pressure": m.get("pressure"),
+            "flow_rate": m.get("flow_rate"),
+        })
+    for r in seed_routes():
+        _store.create_route({
+            "route_id": r["route_id"], "source": r["source"],
+            "destination": r["destination"], "waypoints": r["waypoints"],
+            "length_km": r.get("distance_km") or r.get("length_km", 0),
+            "approved_date": r["approved_date"],
+            "company": r.get("carrier", ""), "status": r["status"],
+            "hazard_level": "high" if r["status"] == "deviated" else "normal",
+        })
+    for t in seed_traceability():
+        _store.create_trace({
+            "trace_id": t["trace_id"], "manifest_no": t["manifest_no"],
+            "hw_code": t["hw_code"], "substance_name": t["substance_name"],
+            "volume_m3": t["volume_m3"], "source": t["source"],
+            "destination": t["destination"], "carrier": t["carrier"],
+            "driver": t["driver"], "license_plate": t["license_plate"],
+            "generate_time": t["generate_time"],
+            "dispatch_time": t["dispatch_time"], "arrive_time": t["arrive_time"],
+            "disposal_result": t["disposal_result"], "status": t["status"],
+        })
+    for s in seed_pipe_segments():
+        _store.create_segment({
+            "segment_id": s["segment_id"], "route_id": s["route_id"],
+            "location": s["location"], "material": s["material"],
+            "diameter_mm": s["diameter_mm"], "wall_thickness_mm": s["wall_thickness_mm"],
+            "current_thickness_mm": s["current_thickness_mm"],
+            "corrosion_rate": s["corrosion_rate"],
+            "remaining_life_years": s["remaining_life_years"],
+            "risk_level": s["risk_level"], "last_inspection": s["last_inspection"],
+            "next_inspection": s["next_inspection"],
+        })
+    for l in seed_compliance_ledger():
+        _store.create_ledger({
+            "record_id": l["record_id"], "category": l["category"],
+            "category_name": l["category_name"], "factory": l["factory"],
+            "substance": l["substance"], "volume_m3": l["volume_m3"],
+            "compliant": l["compliant"], "issue_count": l["issue_count"],
+            "record_date": l["record_date"],
+        })
+    for v in seed_emergency_valves():
+        auto_close = v.get("auto_close", False)
+        if isinstance(auto_close, str):
+            auto_close = auto_close.lower() in ("true", "1")
+        _store.create_valve({
+            "valve_id": v["valve_id"], "route_id": v["route_id"],
+            "location": v["location"], "cascade_level": v["cascade_level"],
+            "response_time_sec": v["response_time_sec"],
+            "valve_type": v["valve_type"], "status": v["status"],
+            "auto_close": auto_close, "last_test": v.get("last_test"),
+        })
+    _load_all_collections()
+
+
+def _load_all_collections():
+    from . import store as _store
+    _state["media"] = [r for page in range(1, 50) for r in _store.list_media(page=page, page_size=200).get("data", [])]
+    _state["routes"] = [r for page in range(1, 50) for r in _store.list_routes(page=page, page_size=200).get("data", [])]
+    _state["traceability"] = [r for page in range(1, 50) for r in _store.list_traces(page=page, page_size=200).get("data", [])]
+    _state["pipe_segments"] = [r for page in range(1, 50) for r in _store.list_segments(page=page, page_size=200).get("data", [])]
+    _state["compliance_ledger"] = [r for page in range(1, 50) for r in _store.list_ledger(page=page, page_size=200).get("data", [])]
+    _state["emergency_valves"] = [r for page in range(1, 50) for r in _store.list_valves(page=page, page_size=200).get("data", [])]
+
+
 _reset_alerts()
+_init_db()
 
 
 # ==============================================================================
@@ -531,3 +636,156 @@ def get_emergency_stats() -> Dict[str, Any]:
         "emergency_logs_count": len(_state["emergency_logs"]),
         "updated_at": now_str(),
     }
+
+
+# ==============================================================================
+# 持久化 CRUD 包装（调用 store 层）
+# ==============================================================================
+
+def _reload():
+    """变更后将 store 数据重新载入内存"""
+    from . import store as _store
+    _state["media"] = [r for p in range(1, 50) for r in _store.list_media(page=p, page_size=200).get("data", [])]
+    _state["routes"] = [r for p in range(1, 50) for r in _store.list_routes(page=p, page_size=200).get("data", [])]
+    _state["traceability"] = [r for p in range(1, 50) for r in _store.list_traces(page=p, page_size=200).get("data", [])]
+    _state["pipe_segments"] = [r for p in range(1, 50) for r in _store.list_segments(page=p, page_size=200).get("data", [])]
+    _state["compliance_ledger"] = [r for p in range(1, 50) for r in _store.list_ledger(page=p, page_size=200).get("data", [])]
+    _state["emergency_valves"] = [r for p in range(1, 50) for r in _store.list_valves(page=p, page_size=200).get("data", [])]
+
+
+def create_media(data):
+    from . import store as _s
+    result = _s.create_media(data)
+    _reload()
+    return result
+
+
+def update_media(media_id, data):
+    from . import store as _s
+    result = _s.update_media(media_id, data)
+    if result:
+        _reload()
+    return result
+
+
+def delete_media(media_id):
+    from . import store as _s
+    result = _s.delete_media(media_id)
+    if result:
+        _reload()
+    return result
+
+
+def create_route(data):
+    from . import store as _s
+    result = _s.create_route(data)
+    _reload()
+    return result
+
+
+def update_route(route_id, data):
+    from . import store as _s
+    result = _s.update_route(route_id, data)
+    if result:
+        _reload()
+    return result
+
+
+def delete_route(route_id):
+    from . import store as _s
+    result = _s.delete_route(route_id)
+    if result:
+        _reload()
+    return result
+
+
+def create_trace(data):
+    from . import store as _s
+    result = _s.create_trace(data)
+    _reload()
+    return result
+
+
+def delete_trace(trace_id):
+    from . import store as _s
+    result = _s.delete_trace(trace_id)
+    if result:
+        _reload()
+    return result
+
+
+def create_segment(data):
+    from . import store as _s
+    result = _s.create_segment(data)
+    _reload()
+    return result
+
+
+def update_segment(segment_id, data):
+    from . import store as _s
+    result = _s.update_segment(segment_id, data)
+    if result:
+        _reload()
+    return result
+
+
+def delete_segment(segment_id):
+    from . import store as _s
+    result = _s.delete_segment(segment_id)
+    if result:
+        _reload()
+    return result
+
+
+def create_ledger(data):
+    from . import store as _s
+    result = _s.create_ledger(data)
+    _reload()
+    return result
+
+
+def delete_ledger(record_id):
+    from . import store as _s
+    result = _s.delete_ledger(record_id)
+    if result:
+        _reload()
+    return result
+
+
+def create_valve(data):
+    from . import store as _s
+    result = _s.create_valve(data)
+    _reload()
+    return result
+
+
+def update_valve(valve_id, data):
+    from . import store as _s
+    result = _s.update_valve(valve_id, data)
+    if result:
+        _reload()
+    return result
+
+
+def delete_valve(valve_id):
+    from . import store as _s
+    result = _s.delete_valve(valve_id)
+    if result:
+        _reload()
+    return result
+
+
+def emergency_shutdown_and_log(route_id, leak_location=None, severity="medium"):
+    """执行应急关闭并记录日志到数据库"""
+    result = execute_emergency_shutdown(route_id, leak_location, severity)
+    try:
+        from . import store as _store
+        _store.append_emergency_log({
+            "log_id": "EMG-%04d" % (len(_state["emergency_logs"]) + 1),
+            "route_id": route_id, "leak_location": leak_location or "未知",
+            "severity": severity, "valves_closed": result.get("valves_closed", 0),
+            "total_response_time_sec": result.get("total_response_time_sec", 0),
+        })
+    except Exception:
+        pass
+    return result

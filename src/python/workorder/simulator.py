@@ -12,9 +12,11 @@
 
 import math
 import random
+import threading
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from . import store
 from .models import (
     CHANNELS,
     LOCATIONS,
@@ -27,18 +29,48 @@ from .models import (
     seed_staff,
 )
 
+_lock = threading.RLock()
+
 # ==============================================================================
-# 内存数据状态
+# 数据状态（SQLite 持久化，库不可用时降级为内存态）
 # ==============================================================================
 
-_staff = seed_staff()
-_state = {
-    "orders": seed_orders(_staff),
-    "staff": _staff,
-    "sla_rules": seed_sla_rules(),
-    "dispatch_logs": [],
-    "order_seq": 2001,
-}
+_persist = True
+
+
+def _seed_state() -> Dict[str, Any]:
+    staff = seed_staff()
+    return {
+        "orders": seed_orders(staff),
+        "staff": staff,
+        "sla_rules": seed_sla_rules(),
+        "dispatch_logs": [],
+        "order_seq": 2001,
+    }
+
+
+def _bootstrap() -> Dict[str, Any]:
+    global _persist
+    try:
+        store.ensure_schema()
+        state = store.load_state()
+        if state is None:
+            state = _seed_state()
+            store.save_state(state)
+            print("[workorder] 空库，已灌入种子并落库：工单 %d 条" % len(state["orders"]))
+        else:
+            print("[workorder] SQLite 已载入：工单 %d 条 / 人员 %d 名 / SLA 规则 %d 条"
+                  % (len(state["orders"]), len(state["staff"]), len(state["sla_rules"])))
+        return state
+    except Exception as exc:                              # noqa: BLE001
+        _persist = False
+        print("[workorder] SQLite 不可用，本次运行降级为内存态（重启后数据不保留）：%s" % exc)
+        print("[workorder] 若为表结构变更导致（no such column），删除 %s 后重启即可重新建表灌种子"
+              % store.DB_PATH)
+        return _seed_state()
+
+
+_state = _bootstrap()
 
 # 区域坐标（用于派单距离评分）
 _LOCATION_COORDS = {
@@ -126,6 +158,21 @@ def list_orders(filters: Optional[Dict] = None) -> List[Dict]:
     return orders
 
 
+def query_orders(filters: Optional[Dict] = None,
+                 page: int = 1, page_size: int = 0) -> Dict[str, Any]:
+    """列表查询 + 真分页：total 为过滤后的总数，与当前页大小无关"""
+    matched = list_orders(filters)
+    page = max(1, int(page or 1))
+    size = int(page_size or 0)
+    if size <= 0:
+        return {"orders": matched, "total": len(matched),
+                "page": 1, "page_size": len(matched), "pages": 1}
+    pages = max(1, (len(matched) + size - 1) // size)
+    start = (page - 1) * size
+    return {"orders": matched[start:start + size], "total": len(matched),
+            "page": min(page, pages), "page_size": size, "pages": pages}
+
+
 def get_order(order_id: str) -> Optional[Dict]:
     for o in _state["orders"]:
         if o["order_id"] == order_id:
@@ -134,7 +181,9 @@ def get_order(order_id: str) -> Optional[Dict]:
 
 
 def create_order(title: str, channel: str, category: str, priority: str,
-                 location: Optional[str], description: Optional[str]) -> Dict[str, Any]:
+                 location: Optional[str], description: Optional[str],
+                 reporter: Optional[str] = None,
+                 sla_hours: Optional[int] = None) -> Dict[str, Any]:
     if channel not in CHANNELS:
         raise ValueError("未知接入渠道：%s" % channel)
     if category not in ORDER_CATEGORIES:
@@ -142,34 +191,97 @@ def create_order(title: str, channel: str, category: str, priority: str,
     if priority not in PRIORITIES:
         raise ValueError("未知优先级：%s" % priority)
 
-    _state["order_seq"] += 1
-    now = datetime.now()
-    sla_hours = PRIORITIES[priority]["sla_hours"]
-    order = {
-        "order_id": "WO-2026%04d" % _state["order_seq"],
-        "title": title or "%s-新工单" % ORDER_CATEGORIES[category]["name"],
-        "channel": channel,
-        "category": category,
-        "required_skill": ORDER_CATEGORIES[category]["skill"],
-        "priority": priority,
-        "status": "pending",
-        "location": location or random.choice(LOCATIONS),
-        "description": description or "%s 渠道上报异常，请及时处理。" % CHANNELS[channel]["source"],
-        "reporter": CHANNELS[channel]["source"],
-        "created_at": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "sla_deadline": (now + timedelta(hours=sla_hours)).strftime("%Y-%m-%d %H:%M:%S"),
-        "sla_hours": sla_hours,
-        "assignee": None,
-        "assignee_id": None,
-        "resolved_at": None,
-        "rating": None,
-        "escalated": False,
-        "process": [{"step": "pending", "step_name": "待派单",
-                     "at": now.strftime("%Y-%m-%d %H:%M:%S"),
-                     "operator": "系统", "note": "工单生成，等待派单"}],
-    }
-    _state["orders"].insert(0, order)
-    return order
+    with _lock:
+        _state["order_seq"] += 1
+        seq = _state["order_seq"]
+        now = datetime.now()
+        sla_hours = max(1, int(sla_hours) if sla_hours else PRIORITIES[priority]["sla_hours"])
+        order = {
+            "order_id": "WO-2026%04d" % seq,
+            "title": title or "%s-新工单" % ORDER_CATEGORIES[category]["name"],
+            "channel": channel,
+            "category": category,
+            "required_skill": ORDER_CATEGORIES[category]["skill"],
+            "priority": priority,
+            "status": "pending",
+            "location": location or random.choice(LOCATIONS),
+            "description": description or "%s 渠道上报异常，请及时处理。" % CHANNELS[channel]["source"],
+            "reporter": reporter or CHANNELS[channel]["source"],
+            "created_at": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "sla_deadline": (now + timedelta(hours=sla_hours)).strftime("%Y-%m-%d %H:%M:%S"),
+            "sla_hours": sla_hours,
+            "assignee": None,
+            "assignee_id": None,
+            "resolved_at": None,
+            "rating": None,
+            "escalated": False,
+            "process": [{"step": "pending", "step_name": "待派单",
+                         "at": now.strftime("%Y-%m-%d %H:%M:%S"),
+                         "operator": "系统", "note": "工单生成，等待派单"}],
+        }
+        _state["orders"].insert(0, order)
+        if _persist:
+            store.set_counter(store.ORDER_SEQ_KEY, seq)
+            store.upsert_order(order)
+        return order
+
+
+EDITABLE_FIELDS = ("title", "location", "description", "reporter")
+
+
+def update_order(order_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """编辑工单基础信息；类别/优先级变更时同步重算所需技能与 SLA 时限"""
+    with _lock:
+        order = get_order(order_id)
+        if order is None:
+            raise ValueError("工单不存在：%s" % order_id)
+        channel = data.get("channel") or order["channel"]
+        if channel not in CHANNELS:
+            raise ValueError("未知接入渠道：%s" % channel)
+        category = data.get("category") or order["category"]
+        if category not in ORDER_CATEGORIES:
+            raise ValueError("未知工单类别：%s" % category)
+        priority = data.get("priority") or order["priority"]
+        if priority not in PRIORITIES:
+            raise ValueError("未知优先级：%s" % priority)
+
+        for field in EDITABLE_FIELDS:
+            if data.get(field) is not None:
+                order[field] = data[field]
+        order["channel"] = channel
+        order["category"] = category
+        order["required_skill"] = data.get("required_skill") or ORDER_CATEGORIES[category]["skill"]
+
+        reschedule = False
+        if data.get("sla_hours"):
+            order["sla_hours"] = max(1, int(data["sla_hours"]))
+            reschedule = True
+        if priority != order["priority"]:
+            order["priority"] = priority
+            if not data.get("sla_hours"):
+                order["sla_hours"] = PRIORITIES[priority]["sla_hours"]
+            reschedule = True
+        if reschedule:
+            created = _parse_time(order["created_at"]) or datetime.now()
+            order["sla_deadline"] = (created + timedelta(hours=order["sla_hours"])).strftime(
+                "%Y-%m-%d %H:%M:%S")
+        if not order.get("process"):
+            order["process"] = [{"step": "pending", "step_name": "待派单",
+                                 "at": order["created_at"], "operator": "系统",
+                                 "note": "工单生成，等待派单"}]
+        if _persist:
+            store.upsert_order(order)
+        return order
+
+
+def delete_order(order_id: str) -> None:
+    with _lock:
+        order = get_order(order_id)
+        if order is None:
+            raise ValueError("工单不存在：%s" % order_id)
+        _state["orders"] = [o for o in _state["orders"] if o["order_id"] != order_id]
+        if _persist:
+            store.delete_order(order_id)
 
 
 def get_order_stats() -> Dict[str, Any]:
@@ -191,13 +303,25 @@ def get_order_stats() -> Dict[str, Any]:
 
 
 def _order_trend() -> List[Dict]:
+    """近 7 天工单趋势：新增按创建时间统计，归档按流程中 closed 节点时间统计"""
+    created_counts: Dict[str, int] = {}
+    closed_counts: Dict[str, int] = {}
+    for o in _state["orders"]:
+        day = (o.get("created_at") or "")[:10]
+        if day:
+            created_counts[day] = created_counts.get(day, 0) + 1
+        for record in o.get("process") or []:
+            if record.get("step") == "closed":
+                cday = (record.get("at") or "")[:10]
+                if cday:
+                    closed_counts[cday] = closed_counts.get(cday, 0) + 1
     trend = []
     for i in range(7):
-        day = datetime.now() - timedelta(days=6 - i)
+        day = (datetime.now() - timedelta(days=6 - i)).strftime("%Y-%m-%d")
         trend.append({
-            "date": day.strftime("%m-%d"),
-            "created": random.randint(8, 30),
-            "closed": random.randint(6, 26),
+            "date": day[5:],
+            "created": created_counts.get(day, 0),
+            "closed": closed_counts.get(day, 0),
         })
     return trend
 
@@ -275,19 +399,25 @@ def assign_order(order_id: str, staff_id: str) -> Dict[str, Any]:
     if order["status"] not in ("pending", "assigned"):
         raise ValueError("工单已进入处置流程，不可重复派单")
 
-    order["assignee"] = staff["name"]
-    order["assignee_id"] = staff_id
-    order["status"] = "assigned"
-    order["process"].append({
-        "step": "assigned", "step_name": "已派单", "at": now_str(),
-        "operator": "智能派单引擎", "note": "分派至 %s（%s）" % (staff["name"], staff_id),
-    })
-    staff["status"] = "busy"
-    _state["dispatch_logs"].insert(0, {
-        "order_id": order_id, "staff_id": staff_id, "staff_name": staff["name"],
-        "dispatched_at": now_str(), "method": "manual_confirm",
-    })
-    return order
+    with _lock:
+        order["assignee"] = staff["name"]
+        order["assignee_id"] = staff_id
+        order["status"] = "assigned"
+        order["process"].append({
+            "step": "assigned", "step_name": "已派单", "at": now_str(),
+            "operator": "智能派单引擎", "note": "分派至 %s（%s）" % (staff["name"], staff_id),
+        })
+        staff["status"] = "busy"
+        log_entry = {
+            "order_id": order_id, "staff_id": staff_id, "staff_name": staff["name"],
+            "dispatched_at": now_str(), "method": "manual_confirm",
+        }
+        _state["dispatch_logs"].insert(0, log_entry)
+        if _persist:
+            store.upsert_order(order)
+            store.upsert_staff(staff)
+            store.add_dispatch_log(log_entry)
+        return order
 
 
 def get_dispatch_logs(limit: int = 20) -> List[Dict]:
@@ -352,39 +482,45 @@ def get_process(order_id: str) -> Dict[str, Any]:
 def advance_process(order_id: str, step: str, note: Optional[str] = None,
                     rating: Optional[int] = None) -> Dict[str, Any]:
     """推进流程节点：接单→到场→处置→验收→评价关闭"""
-    order = get_order(order_id)
-    if order is None:
-        raise ValueError("工单不存在：%s" % order_id)
-    if step not in _STEP_NAME:
-        raise ValueError("未知流程节点：%s" % step)
+    with _lock:
+        order = get_order(order_id)
+        if order is None:
+            raise ValueError("工单不存在：%s" % order_id)
+        if step not in _STEP_NAME:
+            raise ValueError("未知流程节点：%s" % step)
 
-    cur_idx = _STEP_ORDER.index(order["status"]) if order["status"] in _STEP_ORDER else 0
-    next_idx = _STEP_ORDER.index(step)
-    if next_idx <= cur_idx:
-        raise ValueError("流程节点不可回退或重复：%s" % step)
-    if next_idx > cur_idx + 1:
-        raise ValueError("请按顺序推进流程，当前节点：%s" % order["status"])
-    if order["status"] == "pending":
-        raise ValueError("工单尚未派单，请先派单")
+        cur_idx = _STEP_ORDER.index(order["status"]) if order["status"] in _STEP_ORDER else 0
+        next_idx = _STEP_ORDER.index(step)
+        if next_idx <= cur_idx:
+            raise ValueError("流程节点不可回退或重复：%s" % step)
+        if next_idx > cur_idx + 1:
+            raise ValueError("请按顺序推进流程，当前节点：%s" % order["status"])
+        if order["status"] == "pending":
+            raise ValueError("工单尚未派单，请先派单")
 
-    order["status"] = step
-    record = {
-        "step": step, "step_name": _STEP_NAME[step], "at": now_str(),
-        "operator": order.get("assignee") or "运维人员",
-        "note": note or _STEP_NAME[step],
-    }
-    if step == "resolved":
-        order["resolved_at"] = now_str()
-    if step == "closed":
-        order["rating"] = rating if rating else random.choice([5, 5, 4, 5, 3])
-        record["note"] = note or "用户评价 %d 星，工单归档" % order["rating"]
-        if order.get("assignee_id"):
-            s = get_staff(order["assignee_id"])
-            if s:
-                s["completed_orders"] += 1
-                s["status"] = "idle"
-    order["process"].append(record)
-    return order
+        order["status"] = step
+        record = {
+            "step": step, "step_name": _STEP_NAME[step], "at": now_str(),
+            "operator": order.get("assignee") or "运维人员",
+            "note": note or _STEP_NAME[step],
+        }
+        staff = None
+        if step == "resolved":
+            order["resolved_at"] = now_str()
+        if step == "closed":
+            order["rating"] = rating if rating else random.choice([5, 5, 4, 5, 3])
+            record["note"] = note or "用户评价 %d 星，工单归档" % order["rating"]
+            if order.get("assignee_id"):
+                staff = get_staff(order["assignee_id"])
+                if staff:
+                    staff["completed_orders"] += 1
+                    staff["status"] = "idle"
+        order["process"].append(record)
+        if _persist:
+            store.upsert_order(order)
+            if staff:
+                store.upsert_staff(staff)
+        return order
 
 
 # ==============================================================================
@@ -467,12 +603,15 @@ def escalate_order(order_id: str) -> Dict[str, Any]:
             rule = r
             break
     target = rule["escalate_target"] if rule else "运维主管"
-    order["escalated"] = True
-    order["process"].append({
-        "step": order["status"], "step_name": "超期升级", "at": now_str(),
-        "operator": "时效管控引擎",
-        "note": "工单超出SLA时限，自动升级至 %s 督办" % target,
-    })
+    with _lock:
+        order["escalated"] = True
+        order["process"].append({
+            "step": order["status"], "step_name": "超期升级", "at": now_str(),
+            "operator": "时效管控引擎",
+            "note": "工单超出SLA时限，自动升级至 %s 督办" % target,
+        })
+        if _persist:
+            store.upsert_order(order)
     return {
         "order_id": order_id,
         "escalated_to": target,

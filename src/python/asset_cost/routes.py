@@ -4,7 +4,7 @@
 资产价值与成本管理子模块 - API路由
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from typing import Optional
 from . import simulator
 from .models import (
@@ -41,19 +41,19 @@ def get_asset(asset_id: str):
 
 @router.post("/assets", summary="新增资产")
 def add_asset(req: AssetCreateRequest):
-    return simulator.add_asset(to_dict(req))
+    return simulator.add_asset_and_save(to_dict(req))
 
 
 @router.delete("/assets/{asset_id}", summary="删除资产")
 def delete_asset(asset_id: str):
-    if not simulator.delete_asset(asset_id):
+    if not simulator.delete_asset_and_save(asset_id):
         raise HTTPException(404, f"资产 {asset_id} 不存在")
     return {"message": f"资产 {asset_id} 已删除"}
 
 
 @router.post("/assets/{asset_id}/review", summary="审核资产")
 def review_asset(asset_id: str, approved: bool = Query(...), comment: str = Query("")):
-    result = simulator.review_asset(asset_id, approved, comment)
+    result = simulator.review_asset_and_save(asset_id, approved, comment)
     if not result:
         raise HTTPException(404, f"资产 {asset_id} 不存在")
     return result
@@ -80,19 +80,19 @@ def list_cost_records(
 
 @router.post("/cost-records", summary="新增费用记录")
 def add_cost_record(req: CostRecordRequest):
-    return simulator.add_cost_record(to_dict(req))
+    return simulator.add_cost_record_and_save(to_dict(req))
 
 
 @router.delete("/cost-records/{record_id}", summary="删除费用记录")
 def delete_cost_record(record_id: str):
-    if not simulator.delete_cost_record(record_id):
+    if not simulator.delete_cost_record_and_save(record_id):
         raise HTTPException(404, f"费用记录 {record_id} 不存在")
     return {"message": f"费用记录 {record_id} 已删除"}
 
 
 @router.post("/cost-records/{record_id}/review", summary="审核费用记录")
 def review_cost_record(record_id: str, approved: bool = Query(...)):
-    result = simulator.review_cost_record(record_id, approved)
+    result = simulator.review_cost_record_and_save(record_id, approved)
     if not result:
         raise HTTPException(404, f"费用记录 {record_id} 不存在")
     return result
@@ -118,7 +118,7 @@ def get_lcc(analysis_id: str):
 
 @router.post("/lcc", summary="执行LCC分析")
 def run_lcc(req: LCCAnalysisRequest):
-    return simulator.run_lcc_analysis(to_dict(req))
+    return simulator.run_lcc_and_save(to_dict(req))
 
 
 @router.get("/config/categories", summary="资产分类配置")
@@ -139,3 +139,54 @@ def get_regions():
 @router.get("/config/depr-methods", summary="折旧方法")
 def get_depr_methods():
     return DEPR_METHODS
+
+
+# ==============================================================================
+# Excel 导入/导出（资产管理）
+# ==============================================================================
+
+@router.get("/assets/export", summary="导出资产台账 Excel")
+def export_assets():
+    from common.excel_utils import download_xlsx
+    data = simulator.list_assets(page=1, page_size=99999)["items"]
+    return download_xlsx(data, "asset_assets.xlsx", "资产台账")
+
+@router.post("/assets/import", summary="从 Excel 导入资产台账")
+def import_assets(file: UploadFile = File(...)):
+    content = file.file.read()
+    from common.excel_utils import import_from_excel
+    parsed = import_from_excel(content)
+    created = []
+    for row in parsed["rows"]:
+        try:
+            simulator.add_asset_and_save(row)
+            created.append(row)
+        except Exception:
+            pass
+    return {"status": "success", "imported": len(created), "total_rows": len(parsed["rows"])}
+
+@router.get("/cost-records/export", summary="导出费用记录 Excel")
+def export_cost_records():
+    from common.excel_utils import download_xlsx
+    data = simulator.list_cost_records(page=1, page_size=99999)["items"]
+    return download_xlsx(data, "asset_costs.xlsx", "费用记录")
+
+@router.post("/cost-records/import", summary="从 Excel 导入费用记录")
+def import_cost_records(file: UploadFile = File(...)):
+    content = file.file.read()
+    from common.excel_utils import import_from_excel
+    parsed = import_from_excel(content)
+    created = []
+    for row in parsed["rows"]:
+        try:
+            simulator.add_cost_record_and_save(row)
+            created.append(row)
+        except Exception:
+            pass
+    return {"status": "success", "imported": len(created), "total_rows": len(parsed["rows"])}
+
+@router.get("/lcc/export", summary="导出LCC分析 Excel")
+def export_lcc():
+    from common.excel_utils import download_xlsx
+    data = simulator.list_lcc_analyses()
+    return download_xlsx(data, "asset_lcc.xlsx", "LCC分析")

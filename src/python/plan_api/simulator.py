@@ -17,6 +17,7 @@ import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from . import store
 from .matching import derive_category, match_plans
 from .models import (
     DRILL_ALARM_CODES,
@@ -33,6 +34,9 @@ MAX_MATCHED_ALARM_MEMORY = 500
 AUTO_ACK_SCORE = 70  # 最优匹配分达到该值时联动确认管廊告警
 
 _lock = threading.RLock()
+
+# SQLite 可用性开关：库不可用时降级为纯内存态（重启不保留），但不阻断主服务
+_persist = True
 
 # ---- 可变状态 ----
 _plans: Dict[str, Dict[str, Any]] = {}
@@ -53,6 +57,16 @@ _tunnel_resolved = False
 
 def _today_str() -> str:
     return datetime.now().strftime("%Y-%m-%d")
+
+
+def _persist_runtime() -> None:
+    """写回序列号与当日计数（调用方持锁）"""
+    if not _persist:
+        return
+    store.set_counters({"match_seq": _match_seq,
+                        "activation_seq": _activation_seq,
+                        "event_seq": _event_seq})
+    store.set_daily(_today or _today_str(), _today_match_count, _today_drill_count)
 
 
 def _roll_day_locked() -> None:
@@ -114,7 +128,7 @@ def _add_event_locked(etype: str, ref_id: str, description: str,
                       level: int = 0, payload: Optional[Dict[str, Any]] = None) -> None:
     global _event_seq
     _event_seq += 1
-    _events.append({
+    event = {
         "event_id": "EVT-%05d" % _event_seq,
         "time": now_str(),
         "type": etype,
@@ -122,9 +136,13 @@ def _add_event_locked(etype: str, ref_id: str, description: str,
         "ref_id": ref_id,
         "description": description,
         "payload": payload or {},
-    })
+    }
+    _events.append(event)
     if len(_events) > MAX_EVENTS:
         del _events[: len(_events) - MAX_EVENTS]
+    if _persist:
+        store.insert_event(event, keep=MAX_EVENTS)
+        _persist_runtime()
 
 
 # ==============================================================================
@@ -208,7 +226,7 @@ def _poll_tunnel_alarms() -> None:
                 to_ack.append(alarm_id)
             _match_seq += 1
             _today_match_count += 1
-            _live_matches.append({
+            match = {
                 "match_id": "LM-%05d" % _match_seq,
                 "time": now_str(),
                 "alarm_id": alarm_id,
@@ -229,8 +247,12 @@ def _poll_tunnel_alarms() -> None:
                 "fallback": result.get("fallback", False),
                 "fallback_message": result.get("fallback_message"),
                 "auto_acked": alarm_id in to_ack,
-            })
+            }
+            _live_matches.append(match)
             _matched_alarm_ids.add(alarm_id)
+            if _persist:
+                store.insert_live_match(match, keep=MAX_LIVE_MATCHES)
+                store.add_matched_alarms([alarm_id], match["time"])
             _add_event_locked(
                 "match_live", best["plan_id"] if best else "-",
                 "管廊告警[%s] %s 匹配%s" % (
@@ -306,6 +328,8 @@ def activate_plan(plan_id: str, alarm_id: Optional[str] = None,
             ],
         }
         _activations.append(activation)
+        if _persist:
+            store.insert_activation(activation)
         _add_event_locked(
             "activate", plan_id,
             "预案激活：%s（%s）" % (plan.get("plan_name"), activation["trigger"]),
@@ -329,6 +353,8 @@ def mark_node_done(activation_id: str, node_id: str) -> Dict[str, Any]:
             raise ValueError("节点已完成：%s" % node_id)
         node["status"] = "done"
         node["finished_at"] = now_str()
+        if _persist:
+            store.upsert_activation(activation)
         done = sum(1 for n in activation["nodes"] if n["status"] in ("done", "skipped"))
         return _sanitize({"activation_id": activation_id, "node_id": node_id,
                           "progress": "%d/%d" % (done, len(activation["nodes"]))})
@@ -346,6 +372,8 @@ def finish_activation(activation_id: str) -> Dict[str, Any]:
             raise ValueError("尚有 %d 个节点未完成，请先完成或跳过" % len(pending))
         activation["status"] = "finished"
         activation["finished_at"] = now_str()
+        if _persist:
+            store.upsert_activation(activation)
         _add_event_locked(
             "finish", activation["plan_id"],
             "处置完结：%s（%s）" % (activation.get("plan_name"), activation_id),
@@ -461,6 +489,22 @@ def list_plans(category: Optional[str] = None, status: Optional[str] = None,
     return _sanitize(plans)
 
 
+def query_plans(category: Optional[str] = None, status: Optional[str] = None,
+                keyword: Optional[str] = None,
+                page: int = 1, page_size: int = 0) -> Dict[str, Any]:
+    """列表 + 真分页：total 为过滤后的总数"""
+    plans = list_plans(category=category, status=status, keyword=keyword)
+    page = max(1, int(page or 1))
+    size = int(page_size or 0)
+    if size <= 0:
+        return {"plans": plans, "total": len(plans),
+                "page": 1, "page_size": len(plans), "pages": 1}
+    pages = max(1, (len(plans) + size - 1) // size)
+    start = (page - 1) * size
+    return {"plans": plans[start:start + size], "total": len(plans),
+            "page": min(page, pages), "page_size": size, "pages": pages}
+
+
 def get_plan(plan_id: str) -> Dict[str, Any]:
     with _lock:
         plan = _plans.get(plan_id)
@@ -502,6 +546,8 @@ def create_plan(data: Dict[str, Any]) -> Dict[str, Any]:
             "updated_at": now_str(),
         }
         _plans[plan_id] = plan
+        if _persist:
+            store.upsert_plan(plan)
         _add_event_locked("plan_create", plan_id, "新建预案：%s" % plan["plan_name"])
         return _sanitize(dict(plan))
 
@@ -538,6 +584,8 @@ def update_plan(plan_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
             if data.get(field) is not None:
                 plan[field] = data[field]
         _touch_locked(plan)
+        if _persist:
+            store.upsert_plan(plan)
         _add_event_locked("plan_update", plan_id, "修订预案：%s" % plan["plan_name"])
         return _sanitize(dict(plan))
 
@@ -547,6 +595,8 @@ def delete_plan(plan_id: str) -> None:
         plan = _plans.pop(plan_id, None)
         if plan is None:
             raise ValueError("预案不存在：%s" % plan_id)
+        if _persist:
+            store.delete_plan(plan_id)
         _add_event_locked("plan_delete", plan_id, "删除预案：%s" % plan.get("plan_name"))
 
 
@@ -572,6 +622,8 @@ def add_flow_node(plan_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         plan["flow_nodes"].append(node)
         _renumber_nodes_locked(plan)
         _touch_locked(plan)
+        if _persist:
+            store.upsert_plan(plan)
         _add_event_locked("node_add", plan_id, "新增流程节点：%s（%s）" % (node["title"], plan_id))
         return _sanitize(dict(plan))
 
@@ -600,6 +652,8 @@ def update_flow_node(plan_id: str, node_id: str, data: Dict[str, Any]) -> Dict[s
                 node[field] = data[field]
         _renumber_nodes_locked(plan)
         _touch_locked(plan)
+        if _persist:
+            store.upsert_plan(plan)
         _add_event_locked("node_update", plan_id, "修订流程节点：%s（%s）" % (node["title"], plan_id))
         return _sanitize(dict(plan))
 
@@ -615,6 +669,8 @@ def delete_flow_node(plan_id: str, node_id: str) -> Dict[str, Any]:
             raise ValueError("节点不存在：%s" % node_id)
         _renumber_nodes_locked(plan)
         _touch_locked(plan)
+        if _persist:
+            store.upsert_plan(plan)
         _add_event_locked("node_delete", plan_id, "删除流程节点：%s（%s）" % (node_id, plan_id))
         return _sanitize(dict(plan))
 
@@ -643,14 +699,51 @@ def get_events(limit: int = 50) -> List[Dict[str, Any]]:
 # 引擎启动
 # ==============================================================================
 
+_initialized = False
+
+
 def initialize() -> None:
-    """加载种子预案（幂等）"""
+    """还原 SQLite 状态；空库则灌入种子预案并落库（幂等）"""
+    global _persist, _initialized
+    global _match_seq, _activation_seq, _event_seq
+    global _today, _today_match_count, _today_drill_count
     with _lock:
-        if _plans:
+        if _initialized:
             return
-        for plan in seed_plans():
-            _plans[plan["plan_id"]] = plan
-        _add_event_locked("system", "-", "预案引擎初始化，载入种子预案 %d 份" % len(_plans))
+        _initialized = True
+        _today = _today_str()
+        try:
+            store.ensure_schema()
+            if store.has_data():
+                _plans.update(store.load_plans())
+                _activations.extend(store.load_activations())
+                _live_matches.extend(store.load_live_matches())
+                _events.extend(store.load_events(limit=MAX_EVENTS))
+                _matched_alarm_ids.update(store.load_matched_alarm_ids())
+                counters = store.load_counters()
+                _match_seq = counters["match_seq"]
+                _activation_seq = counters["activation_seq"]
+                _event_seq = counters["event_seq"]
+                daily = store.load_daily(_today)
+                _today_match_count = daily["match_count"]
+                _today_drill_count = daily["drill_count"]
+                print("[plan_api] SQLite 已载入：预案 %d 份 / 激活实例 %d 个 / 实时匹配 %d 条 / 事件 %d 条"
+                      % (len(_plans), len(_activations), len(_live_matches), len(_events)))
+                return
+            seeds = seed_plans()
+            store.seed_plans(seeds)
+            for plan in seeds:
+                _plans[plan["plan_id"]] = plan
+            print("[plan_api] 空库，已灌入种子预案 %d 份" % len(_plans))
+            _add_event_locked("system", "-", "预案引擎初始化，载入种子预案 %d 份" % len(_plans))
+        except Exception as exc:                          # noqa: BLE001
+            _persist = False
+            print("[plan_api] SQLite 不可用，本次运行降级为内存态（重启后数据不保留）：%s" % exc)
+            print("[plan_api] 若为表结构变更导致（no such column），删除 %s 后重启即可重新建表灌种子"
+                  % store.DB_PATH)
+            if not _plans:
+                for plan in seed_plans():
+                    _plans[plan["plan_id"]] = plan
 
 
 _engine_started = False

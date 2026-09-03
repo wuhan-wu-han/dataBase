@@ -111,6 +111,8 @@ function hexToRgba(hex, alpha) {
   display: flex;
   align-items: center;
   gap: 16px;
+  /* 作为栅格子项时必须可被压缩，否则内部 42px 数字会把列撑破 */
+  min-width: 0;
   /* Apple 玻璃卡片 */
   background-color: var(--app-card);
   -webkit-backdrop-filter: blur(var(--app-glass-blur)) saturate(var(--app-glass-saturate));
@@ -164,5 +166,23 @@ function hexToRgba(hex, alpha) {
   font-size: 13px;
   color: var(--app-text-3);
   letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 768px) {
+  .stat-card {
+    gap: 12px;
+    padding: 18px 20px;
+  }
+  .stat-card__icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+  }
+  .stat-card__value {
+    font-size: 32px;
+  }
 }
 </style>

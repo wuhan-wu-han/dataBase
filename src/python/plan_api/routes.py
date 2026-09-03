@@ -50,16 +50,18 @@ def plan_categories():
 # 预案 CRUD
 # ==============================================================================
 
-@router.get("/plans", summary="预案列表（可按类别/状态/关键词过滤）")
+@router.get("/plans", summary="预案列表（可按类别/状态/关键词过滤 + 分页）")
 def list_plans(category: Optional[str] = None,
                status: Optional[str] = None,
-               keyword: Optional[str] = None):
+               keyword: Optional[str] = None,
+               page: int = Query(1, ge=1),
+               page_size: int = Query(0, ge=0, le=500)):
     if category and category.upper() not in PLAN_CATEGORIES:
         raise HTTPException(status_code=422, detail="未知预案类别：%s" % category)
     if status and status not in ("active", "draft", "deprecated"):
         raise HTTPException(status_code=422, detail="非法状态过滤：%s" % status)
-    plans = simulator.list_plans(category=category, status=status, keyword=keyword)
-    return {"plans": plans, "total": len(plans)}
+    return simulator.query_plans(category=category, status=status, keyword=keyword,
+                                 page=page, page_size=page_size)
 
 
 @router.post("/plans", summary="新建预案")

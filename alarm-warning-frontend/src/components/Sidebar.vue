@@ -20,6 +20,7 @@
         class="sidebar__item"
         :class="{ 'is-active': isActive(item) }"
         :title="item.title"
+        @click="$emit('navigate')"
       >
         <el-icon :size="20" class="sidebar__item-icon">
           <component :is="item.icon" />
@@ -41,7 +42,7 @@
 <script setup>
 import { useRoute } from 'vue-router'
 import {
-  Odometer, Bell, TrendCharts, DataAnalysis,
+  Odometer, Location, Bell, TrendCharts, DataAnalysis,
   Aim, Box, Grid, MapLocation, AlarmClock,
   OfficeBuilding, Coin, Tickets,
   Fold, Expand
@@ -51,18 +52,19 @@ defineProps({
   collapsed: { type: Boolean, default: false }
 })
 
-defineEmits(['toggle'])
+defineEmits(['toggle', 'navigate'])
 
 const route = useRoute()
 const brandIcon = Odometer
 const collapseIcon = Fold
 const expandIcon = Expand
 
-// 菜单清单（12 项，按用户最新要求）：
-// 监控大屏 / AI预警中心 / 故障预测中心 / 风险研判中心 / 燃气风控 / 危化品监管 /
+// 菜单清单（13 项）：
+// 监控大屏 / 综合态势 / AI预警中心 / 故障预测中心 / 风险研判中心 / 燃气风控 / 危化品监管 /
 // 综合管廊 / 道路塌陷 / 应急预案 / 资产管理 / 资产成本 / 工单管理
 const menus = [
   { path: '/',                   title: '监控大屏',     icon: Odometer },
+  { path: '/gis',                title: '综合态势',     icon: Location },
   { path: '/alerts',             title: 'AI预警中心',   icon: Bell },
   { path: '/failure-prediction', title: '故障预测中心', icon: TrendCharts },
   { path: '/risk-analysis',      title: '风险研判中心', icon: DataAnalysis },

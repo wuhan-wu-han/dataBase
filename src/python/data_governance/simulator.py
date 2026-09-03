@@ -44,7 +44,62 @@ _state = {
     "quality_reports": [],
     "audit_logs": [],
     "spatial_cache": {},
+    # 风险研判持久化集合（SQLite 读写后合并）
+    "risks": [],
 }
+
+
+def _init_db():
+    """初始化数据库并加载风险研判数据"""
+    try:
+        from . import store as _store
+        _store.init_db()
+        if not _has_risks():
+            # 空库则注入少量种子
+            _store.create_risk({
+                "risk_name": "燃气管线老旧腐蚀", "risk_level": "高",
+                "risk_type": "燃气", "location": "Z01区段主干管",
+                "description": "DN300 PE管线敷设超5年，存在腐蚀风险",
+                "status": "active",
+            })
+            _store.create_risk({
+                "risk_name": "电力电缆过载预警", "risk_level": "中",
+                "risk_type": "电力", "location": "Z02区段",
+                "description": "10kV电缆负荷率接近85%，需关注",
+                "status": "active",
+            })
+            _store.create_risk({
+                "risk_name": "排水系统汛期承压", "risk_level": "低",
+                "risk_type": "排水", "location": "Z03区段",
+                "description": "雨水排水管DN500，历史积水点",
+                "status": "active",
+            })
+        _load_risks(_store)
+    except Exception as exc:
+        print("[data_governance] DB 初始化失败：%s" % exc)
+
+
+def _load_risks(_store):
+    res = _store.load_risks(page=1, page_size=9999)
+    _state["risks"] = res.get("data", [])
+
+
+def _has_risks():
+    db = None
+    try:
+        from persistence import SessionLocal
+        from persistence.risk_analysis_tables import RiskAnalysis
+        db = SessionLocal()
+        count = db.query(RiskAnalysis).count()
+        return count > 0
+    except Exception:
+        return False
+    finally:
+        if db:
+            db.close()
+
+
+_init_db()
 
 
 def _reset_quality_reports():
@@ -478,3 +533,61 @@ def check_compliance() -> Dict[str, Any]:
         "checks": checks,
         "checked_at": now_str(),
     }
+
+
+# ==============================================================================
+# 风险研判 CRUD（持久化）
+# ==============================================================================
+
+def list_risks(page: int = 1, page_size: int = 20, keyword: str = "",
+               risk_level: str = "", risk_type: str = "", status: str = ""):
+    from . import store as _store
+    res = _store.load_risks(page=page, page_size=page_size, keyword=keyword,
+                            risk_level=risk_level, risk_type=risk_type, status=status)
+    # 同时合并到内存中的 risks 列表供 overview 使用
+    _load_risks(_store)
+    return res
+
+
+def create_risk(data: Dict) -> Dict:
+    from . import store as _store
+    result = _store.create_risk(data)
+    _load_risks(_store)
+    return result
+
+
+def update_risk(item_id: int, data: Dict) -> Optional[Dict]:
+    from . import store as _store
+    result = _store.update_risk(item_id, data)
+    if result:
+        _load_risks(_store)
+    return result
+
+
+def delete_risk(item_id: int) -> bool:
+    from . import store as _store
+    result = _store.delete_risk(item_id)
+    if result:
+        _load_risks(_store)
+    return result
+
+
+def change_risk_status(item_id: int, status: str) -> Optional[Dict]:
+    from . import store as _store
+    result = _store.change_risk_status(item_id, status)
+    if result:
+        _load_risks(_store)
+    return result
+
+
+def get_risk_item_count() -> int:
+    """获取风险研判总数（供 overview 统计用）"""
+    try:
+        from persistence import SessionLocal
+        from persistence.risk_analysis_tables import RiskAnalysis
+        db = SessionLocal()
+        count = db.query(RiskAnalysis).count()
+        db.close()
+        return count
+    except Exception:
+        return len(_state.get("risks", []))

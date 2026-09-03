@@ -85,6 +85,40 @@ _alarm_seq = 0
 # 管线台账（运行时副本，支持增改）
 _pipelines = [dict(item) for item in PIPELINE_LEDGER]
 
+# ==============================================================================
+# SQLite 持久化初始化
+# ==============================================================================
+
+def _init_tunnel_db():
+    """初始化数据库并加载已持久化的管线和告警"""
+    try:
+        from . import store as _store
+        _store.init_db()
+        # 加载已有管线（DB中的合并到内存，DB中没有的新增的仍用种子）
+        db_pipes = {}
+        for p in range(1, 50):
+            res = _store.list_pipelines(page=p, page_size=200)
+            for pipe in res.get("data", []):
+                db_pipes[pipe["pipeline_id"]] = pipe
+        if db_pipes:
+            # DB有数据时保留DB记录，DB中没有的用种子补全
+            existing_ids = {p["pipeline_id"] for p in _pipelines}
+            for pid, dp in db_pipes.items():
+                if pid not in existing_ids:
+                    _pipelines.append(dp)
+        # 加载告警（最近N条）
+        _loaded_alarm_count = len(_alarms)
+        for p in range(1, 50):
+            res = _store.list_alarms(page=p, page_size=200)
+            for alarm in res.get("data", []):
+                if len(_alarms) < 500:
+                    _alarms.append(alarm)
+    except Exception as exc:
+        print("[tunnel] DB 初始化失败：%s" % exc)
+
+
+_init_tunnel_db()
+
 # 安防状态
 _security = {
     "in_tunnel_count": 5,
@@ -128,8 +162,8 @@ def evaluate_level(metric, value):
     return 0
 
 
-def create_alarm(source_id, cabin, zone_code, metric, value, level, desc_override=None):
-    """构造一条告警记录并加入列表（返回记录）"""
+def create_alarm(source_id, cabin, zone_code, metric, value, level, desc_override=None, persist=True):
+    """构造一条告警记录并加入列表（返回记录）。persist=True时写入数据库"""
     global _alarm_seq
     _alarm_seq += 1
     info = METRIC_INFO.get(metric, {"name": metric, "unit": ""})
@@ -152,6 +186,12 @@ def create_alarm(source_id, cabin, zone_code, metric, value, level, desc_overrid
     }
     _alarms.insert(0, alarm)
     del _alarms[ALARM_MAX_COUNT:]
+    if persist:
+        try:
+            from . import store as _store
+            _store.create_alarm(alarm)
+        except Exception:
+            pass
     return alarm
 
 
@@ -465,13 +505,12 @@ def get_pipelines():
 
 
 def add_pipeline(data):
-    """新增管线，自动生成编号（PL-{舱码}-{序号}）"""
+    """新增管线，自动生成编号（PL-{舱码}-{序号}）并持久化"""
     with _lock:
         cabin = data["cabin"]
         prefix = "PL-%s-" % cabin
         max_seq = 0
         for pipe in _pipelines:
-            # 只按编号前缀扫描：管线舱室字段可能与编号前缀不一致（如误登记数据）
             if pipe["pipeline_id"].startswith(prefix):
                 try:
                     max_seq = max(max_seq, int(pipe["pipeline_id"].split("-")[-1]))
@@ -481,21 +520,34 @@ def add_pipeline(data):
         pipeline["pipeline_id"] = "PL-%s-%03d" % (cabin, max_seq + 1)
         pipeline["commission_date"] = datetime.now().strftime("%Y-%m-%d")
         _pipelines.append(pipeline)
+        # 持久化
+        try:
+            from . import store as _store
+            _store.create_pipeline(pipeline)
+        except Exception:
+            pass
         return dict(pipeline)
 
 
 def update_pipeline(pipeline_id, data):
-    """局部更新管线字段，返回更新后的记录或 None"""
+    """局部更新管线字段，返回更新后的记录或 None（含持久化）"""
     with _lock:
         for pipe in _pipelines:
             if pipe["pipeline_id"] == pipeline_id:
                 pipe.update({k: v for k, v in data.items() if v is not None})
-                return dict(pipe)
+                result = dict(pipe)
+                # 持久化
+                try:
+                    from . import store as _store
+                    _store.update_pipeline(pipeline_id, data)
+                except Exception:
+                    pass
+                return result
     return None
 
 
 def register_access(record_data):
-    """手动登记一条门禁出入记录（模拟刷卡），联动在廊人数"""
+    """手动登记一条门禁出入记录（模拟刷卡），联动在廊人数并持久化"""
     with _lock:
         gate = next((g for g in ACCESS_GATES if g["gate_id"] == record_data["gate_id"]), None)
         record = {
@@ -514,6 +566,12 @@ def register_access(record_data):
         del _security["access_records"][ACCESS_MAX_COUNT:]
         _security["in_tunnel_count"] += 1 if record["direction"] == "进" else -1
         _security["in_tunnel_count"] = max(0, _security["in_tunnel_count"])
+        # 持久化
+        try:
+            from . import store as _store
+            _store.create_access_record(record)
+        except Exception:
+            pass
         return dict(record)
 
 

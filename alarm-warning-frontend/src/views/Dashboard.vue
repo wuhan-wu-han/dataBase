@@ -1,42 +1,40 @@
 <template>
   <div class="dashboard">
-    <!-- 页面级标题 -->
-    <PageHeader title="监控大屏" subtitle="Monitor Dashboard" />
+    <!-- 页面级标题 + GIS 综合态势入口 -->
+    <PageHeader title="监控大屏" subtitle="Monitor Dashboard">
+      <el-button type="primary" :icon="Location" @click="goGis">
+        进入 GIS 综合态势
+      </el-button>
+    </PageHeader>
 
-    <!-- 第一行：4 个 Apple 数据卡 -->
-    <div class="dashboard__row dashboard__row--stats">
+    <!-- 第一行：4 个统计卡片 -->
+    <div class="dashboard__stats">
       <StatCard label="今日预警" :value="stats.today" icon="Bell" color="#0071E3" />
       <StatCard label="高风险预警" :value="stats.highRisk" icon="Warning" color="#FF3B30" />
       <StatCard label="处理中事件" :value="stats.processing" icon="Clock" color="#FF9500" />
       <StatCard label="设备在线率" :value="stats.deviceOnlineRate" icon="Monitor" color="#34C759" />
     </div>
 
-    <!-- 第二行：折线图（预警趋势）+ 环形图（预警等级） -->
-    <div class="dashboard__row dashboard__row--charts">
-      <section class="app-card dashboard__chart-card dashboard__chart-card--line">
+    <!-- 第二行：预警趋势（6 列）+ 预警等级（6 列） -->
+    <div class="dashboard__charts">
+      <section class="app-card dashboard__chart">
         <header class="card-title">
           <h3 class="card-title__text">预警趋势</h3>
           <span class="card-title__badge">近 7 天</span>
         </header>
-        <div ref="lineRef" class="dashboard__chart-canvas"></div>
+        <div ref="lineRef" class="dashboard__canvas"></div>
       </section>
-      <section class="app-card dashboard__chart-card dashboard__chart-card--pie">
+
+      <section class="app-card dashboard__chart">
         <header class="card-title">
           <h3 class="card-title__text">预警等级</h3>
+          <span class="card-title__badge">四级分布</span>
         </header>
-        <div ref="pieRef" class="dashboard__chart-canvas"></div>
+        <div ref="pieRef" class="dashboard__canvas"></div>
       </section>
     </div>
 
-    <!-- 第三行：风险分布横向渐变柱状图 -->
-    <section class="app-card dashboard__bar-card">
-      <header class="card-title">
-        <h3 class="card-title__text">风险分布</h3>
-      </header>
-      <div ref="barRef" class="dashboard__bar-canvas"></div>
-    </section>
-
-    <!-- 第四行：最新预警事件表格 -->
+    <!-- 第三行：最新预警事件（独占整行） -->
     <section class="app-card dashboard__latest">
       <header class="card-title">
         <h3 class="card-title__text">最新预警事件</h3>
@@ -51,7 +49,7 @@
       >
         <el-table-column prop="alertEventCode" label="预警编号" min-width="180" />
         <el-table-column prop="deviceType" label="设备" min-width="120" />
-        <el-table-column prop="areaId" label="区域" width="120" />
+        <el-table-column prop="areaId" label="区域" min-width="120" />
         <el-table-column label="等级" width="110" align="center">
           <template #default="{ row }"><AlertLevelTag :level="row.alertLevel" /></template>
         </el-table-column>
@@ -74,6 +72,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { Location } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import AlertLevelTag from '@/components/AlertLevelTag.vue'
@@ -99,13 +98,15 @@ const trendData = ref([])
 const distribution = ref([])
 const latestAlerts = ref([])
 
-// ===== ECharts 实例 =====
+// ===== ECharts 实例（useEChart 内部已挂 ResizeObserver，容器尺寸变化自动 resize）=====
 const lineRef = ref(null)
 const pieRef = ref(null)
-const barRef = ref(null)
 const { setOption: setLineOption } = useEChart(lineRef)
 const { setOption: setPieOption } = useEChart(pieRef)
-const { setOption: setBarOption } = useEChart(barRef)
+
+function goGis() {
+  router.push('/gis')
+}
 
 // 加载统计：今日总数 / 红色 / OPEN
 async function loadStats() {
@@ -194,7 +195,6 @@ onMounted(async () => {
   // 数据就绪后渲染图表
   renderLineChart()
   renderPieChart()
-  renderBarChart()
 })
 
 // 平滑曲线 + 面积渐变
@@ -272,95 +272,66 @@ function renderPieChart() {
     }]
   })
 }
-
-// 横向渐变柱状图：风险分布
-function renderBarChart() {
-  const data = distribution.value.slice().reverse() // 红色在上更直观
-  setBarOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 60, right: 40, top: 12, bottom: 12 },
-    xAxis: {
-      type: 'value',
-      splitLine: { lineStyle: { color: 'rgba(0,0,0,0.04)' } },
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: { color: '#86868B', fontSize: 12 }
-    },
-    yAxis: {
-      type: 'category',
-      data: data.map(d => d.name),
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: { color: '#424245', fontSize: 13, fontWeight: 500 }
-    },
-    series: [{
-      name: '预警数',
-      type: 'bar',
-      data: data.map(d => ({
-        value: d.value,
-        itemStyle: {
-          color: {
-            type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
-            colorStops: [
-              { offset: 0, color: hexToRgba(d.color, 0.4) },
-              { offset: 1, color: d.color }
-            ]
-          },
-          borderRadius: [0, 6, 6, 0]
-        }
-      })),
-      barWidth: 22
-    }]
-  })
-}
-
-// #RRGGBB → rgba
-function hexToRgba(hex, alpha) {
-  const m = hex.replace('#', '').match(/^([0-9a-fA-F]{6})$/)
-  if (!m) return `rgba(0,113,227,${alpha})`
-  const r = parseInt(m[1].slice(0, 2), 16)
-  const g = parseInt(m[1].slice(2, 4), 16)
-  const b = parseInt(m[1].slice(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
 </script>
 
 <style scoped>
-.dashboard__row {
+/*
+ * 栅格约定：所有列一律用 minmax(0, 1fr)，所有直接子项一律 min-width: 0。
+ * 这样 ECharts 容器和 el-table 才能被压缩到列宽以内，而不是把列撑爆，
+ * 避免出现「图表被挤成竖条 / 页面横向滚动」。
+ */
+.dashboard {
+  min-width: 0;
+}
+
+/* ===== 统计卡片：桌面 4 列 ===== */
+.dashboard__stats {
   display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 16px;
 }
-.dashboard__row--stats {
-  grid-template-columns: repeat(4, 1fr);
-}
-.dashboard__row--charts {
-  grid-template-columns: 2fr 1fr;
+.dashboard__stats > * {
+  min-width: 0;
 }
 
-/* 图表卡片 */
-.dashboard__chart-card,
-.dashboard__bar-card,
-.dashboard__latest {
-  padding: 20px 24px;
+/* ===== 图表行：两图各占一半（等价于 12 列网格中各占 6 列）===== */
+.dashboard__charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
 }
-.dashboard__chart-card {
+.dashboard__charts > * {
+  min-width: 0;
+}
+
+.dashboard__chart {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  padding: 20px 24px;
 }
-.dashboard__chart-canvas {
+.dashboard__canvas {
   width: 100%;
+  min-width: 0;
   height: 280px;
 }
-.dashboard__bar-canvas {
-  width: 100%;
-  height: 220px;
+
+/* ===== 最新预警：独占整行 ===== */
+.dashboard__latest {
+  min-width: 0;
+  padding: 20px 24px;
+  /* 卡片自身不产生横向滚动，表格内部自行滚动 */
+  overflow: hidden;
 }
 .dashboard__link {
+  flex-shrink: 0;
   font-size: 13px;
+  font-weight: 500;
   color: var(--app-primary);
   text-decoration: none;
-  font-weight: 500;
+  white-space: nowrap;
 }
 .dashboard__link:hover {
   opacity: 0.75;
@@ -369,8 +340,42 @@ function hexToRgba(hex, alpha) {
   cursor: pointer;
 }
 
-@media (max-width: 1024px) {
-  .dashboard__row--stats { grid-template-columns: repeat(2, 1fr); }
-  .dashboard__row--charts { grid-template-columns: 1fr; }
+/* 标题与徽章不逐字换行 */
+.dashboard :deep(.card-title__text),
+.dashboard :deep(.card-title__badge) {
+  white-space: nowrap;
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 1280px) {
+  .dashboard__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .dashboard__charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dashboard__canvas {
+    height: 240px;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard__stats {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .dashboard__charts {
+    gap: 12px;
+  }
+  .dashboard__chart,
+  .dashboard__latest {
+    padding: 16px;
+  }
+  .dashboard__canvas {
+    height: 220px;
+  }
 }
 </style>

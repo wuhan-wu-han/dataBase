@@ -23,6 +23,57 @@ _cost_records = seed_cost_records()
 _lcc_analyses = seed_lcc_analyses()
 
 
+def _init_asset_db():
+    """初始化数据库，空库注入种子，否则从 store 加载"""
+    try:
+        from . import store as _store
+        _store.init_db()
+        db_count = _count_store(_store.AssetCostAsset)
+        if db_count == 0:
+            # 空库：将种子写入 store
+            for a in seed_assets():
+                _store.create_asset(a)
+            for r in seed_cost_records():
+                _store.create_cost_record(r)
+            for l in seed_lcc_analyses():
+                _store.create_lcc(l)
+        _reload_collections()
+    except Exception as exc:
+        print("[asset_cost] DB 初始化失败：%s" % exc)
+
+
+def _count_store(model_cls):
+    try:
+        from persistence import SessionLocal
+        db = SessionLocal()
+        c = db.query(model_cls).count()
+        db.close()
+        return c
+    except Exception:
+        return 0
+
+
+def _reload_collections():
+    from . import store as _store
+    global _assets, _cost_records, _lcc_analyses
+    all_assets = []
+    for p in range(1, 50):
+        res = _store.list_assets(page=p, page_size=200)
+        all_assets.extend(res.get("data", []))
+    _assets = all_assets
+
+    all_costs = []
+    for p in range(1, 50):
+        res = _store.list_cost_records(page=p, page_size=200)
+        all_costs.extend(res.get("data", []))
+    _cost_records = all_costs
+
+    _lcc_analyses = _store.list_lcc()
+
+
+_init_asset_db()
+
+
 def get_overview() -> Dict:
     valued = calc_asset_values(_assets)
     total_original = sum(a["original_value"] for a in valued)
@@ -374,3 +425,112 @@ def depreciation_schedule(asset_id: str) -> Optional[Dict]:
             "schedule": schedule,
         }
     return None
+
+
+# ==============================================================================
+# 持久化 CRUD 包装（调用 store 层）
+# ==============================================================================
+
+def _reload():
+    """变更后重新从 store 加载"""
+    global _assets, _cost_records, _lcc_analyses
+    from . import store as _store
+    all_assets = []
+    for p in range(1, 50):
+        res = _store.list_assets(page=p, page_size=200)
+        all_assets.extend(res.get("data", []))
+    _assets = all_assets
+    all_costs = []
+    for p in range(1, 50):
+        res = _store.list_cost_records(page=p, page_size=200)
+        all_costs.extend(res.get("data", []))
+    _cost_records = all_costs
+    _lcc_analyses = _store.list_lcc()
+
+
+def add_asset_and_save(data: Dict) -> Dict:
+    result = add_asset(data)
+    try:
+        from . import store as _store
+        _store.create_asset({k: data.get(k) for k in (
+            "asset_id", "name", "category", "category_name", "region",
+            "material", "material_name", "specs", "original_value",
+            "install_date", "depr_method", "depr_years", "residual_rate", "status",
+        )})
+        _reload()
+    except Exception:
+        pass
+    return result
+
+
+def delete_asset_and_save(asset_id: str) -> bool:
+    result = delete_asset(asset_id)
+    if result:
+        try:
+            from . import store as _store
+            _store.delete_asset(asset_id)
+            _reload()
+        except Exception:
+            pass
+    return result
+
+
+def review_asset_and_save(asset_id: str, approved: bool, comment: str = "") -> Optional[Dict]:
+    result = review_asset(asset_id, approved, comment)
+    if result:
+        try:
+            from . import store as _store
+            _store.review_asset(asset_id, approved, comment)
+            _reload()
+        except Exception:
+            pass
+    return result
+
+
+def add_cost_record_and_save(data: Dict) -> Dict:
+    result = add_cost_record(data)
+    try:
+        from . import store as _store
+        _store.create_cost_record({k: data.get(k) for k in (
+            "record_id", "asset_id", "cost_type", "amount", "description",
+            "region", "record_date",
+        )})
+        _reload()
+    except Exception:
+        pass
+    return result
+
+
+def delete_cost_record_and_save(record_id: str) -> bool:
+    result = delete_cost_record(record_id)
+    if result:
+        try:
+            from . import store as _store
+            _store.delete_cost_record(record_id)
+            _reload()
+        except Exception:
+            pass
+    return result
+
+
+def review_cost_record_and_save(record_id: str, approved: bool) -> Optional[Dict]:
+    result = review_cost_record(record_id, approved)
+    if result:
+        try:
+            from . import store as _store
+            _store.review_cost_record(record_id, approved)
+            _reload()
+        except Exception:
+            pass
+    return result
+
+
+def run_lcc_and_save(data: Dict) -> Dict:
+    result = run_lcc_analysis(data)
+    try:
+        from . import store as _store
+        _store.create_lcc(result)
+        _reload()
+    except Exception:
+        pass
+    return result
