@@ -52,6 +52,17 @@ app = FastAPI(
     description="基于大数据技术栈的工业车间设备状态实时监测和预测性维护服务"
 )
 
+# ==============================================================================
+# SQLite 持久化初始化（幂等建表）
+# 队友已实现 persistence/ 共享持久化层，各模块 store.py 复用。
+# 启动时调用 init_db() 确保数据库表就绪，工单/预案等数据重启不丢。
+# ==============================================================================
+try:
+    from persistence import init_db
+except ImportError:
+    from src.python.persistence import init_db
+init_db()
+
 # 添加CORS中间件
 app.add_middleware(
     CORSMiddleware,
@@ -80,27 +91,12 @@ except ImportError:
     from src.python.hazmat_transport import router as hazmat_router
 app.include_router(hazmat_router)
 
-# ==============================================================================
-# 工单管理 + 应急预案：改用 platform_service 的 SQLite 持久化实现
-# （原内存模拟版 workorder/ 与 plan_api/ 包保留在仓库作为备份，不再挂载）
-# platform_service 内部使用扁平导入(from database import ...)，需先把其目录加入搜索路径
-# ==============================================================================
-_platform_service_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "platform_service")
-if _platform_service_dir not in _sys.path:
-    _sys.path.insert(0, _platform_service_dir)
-
-from database import Base as _ps_Base, engine as _ps_engine        # noqa: E402
-import models_workorder  # noqa: F401,E402  —— 建表需要
-import models_emergency  # noqa: F401,E402  —— 建表需要
-from routers import workorder as _ps_workorder, emergency_plan as _ps_plan  # noqa: E402
-from seed_data import seed_all as _ps_seed_all                     # noqa: E402
-
-# 建表 + 幂等灌入种子数据：数据落 SQLite，重启/关机后仍保留（真持久化）
-_ps_Base.metadata.create_all(bind=_ps_engine)
-_ps_seed_all()
-
-# 注册工单全流程管理子模块路由（SQLite 持久化版）
-app.include_router(_ps_workorder.router)
+# 注册工单全流程管理子模块路由
+try:
+    from workorder import router as workorder_router
+except ImportError:
+    from src.python.workorder import router as workorder_router
+app.include_router(workorder_router)
 
 # 注册地下综合管廊管控子模块路由（兼容两种启动方式）
 try:
@@ -109,8 +105,12 @@ except ImportError:
     from src.python.tunnel_api import router as tunnel_router  # 项目根启动
 app.include_router(tunnel_router)
 
-# 注册数字化预案管理子模块路由（SQLite 持久化版，来自 platform_service）
-app.include_router(_ps_plan.router)
+# 注册数字化预案管理子模块路由（兼容两种启动方式）
+try:
+    from plan_api import router as plan_router            # cd src/python 后启动
+except ImportError:
+    from src.python.plan_api import router as plan_router  # 项目根启动
+app.include_router(plan_router)
 
 # 注册资产价值与成本管理子模块路由（兼容两种启动方式）
 try:
