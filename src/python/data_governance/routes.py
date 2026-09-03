@@ -4,10 +4,10 @@
 数据治理与中台服务子模块 - API路由
 
 前缀 /governance，tag「数据治理与中台服务」。
-覆盖：总览、主数据CRUD、数据标准、质量管控、时空分析、统一API服务。
+覆盖：总览、主数据CRUD、风险研判CRUD、数据标准、质量管控、时空分析、统一API服务。
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
 from typing import Optional
 
 from . import simulator
@@ -31,7 +31,7 @@ def governance_overview():
 
 
 # ==============================================================================
-# 主数据管理
+# 主数据管理（只读，种子数据）
 # ==============================================================================
 
 @router.get("/master/stats", summary="五大主数据统计概览")
@@ -64,6 +64,55 @@ def get_master_item(data_type: str, item_id: str):
     if item is None:
         raise HTTPException(status_code=404, detail="主数据不存在：%s/%s" % (data_type, item_id))
     return item
+
+
+# ==============================================================================
+# 风险研判 CRUD（持久化）
+# ==============================================================================
+
+@router.get("/risks", summary="风险研判列表")
+def list_risks(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    keyword: str = "",
+    risk_level: str = "",
+    risk_type: str = "",
+    status: str = "",
+):
+    return simulator.list_risks(page=page, page_size=page_size,
+                                keyword=keyword, risk_level=risk_level,
+                                risk_type=risk_type, status=status)
+
+
+@router.post("/risks", summary="新增风险研判")
+def create_risk(body: dict):
+    return simulator.create_risk(body)
+
+
+@router.put("/risks/{item_id}", summary="更新风险研判")
+def update_risk(item_id: int, body: dict):
+    result = simulator.update_risk(item_id, body)
+    if result is None:
+        raise HTTPException(status_code=404, detail="风险研判不存在：%d" % item_id)
+    return result
+
+
+@router.delete("/risks/{item_id}", summary="删除风险研判")
+def delete_risk(item_id: int):
+    if not simulator.delete_risk(item_id):
+        raise HTTPException(status_code=404, detail="风险研判不存在：%d" % item_id)
+    return {"success": True}
+
+
+@router.put("/risks/{item_id}/status", summary="变更风险研判状态")
+def change_risk_status(item_id: int, body: dict):
+    status = body.get("status", "")
+    if not status:
+        raise HTTPException(status_code=422, detail="status 不能为空")
+    result = simulator.change_risk_status(item_id, status)
+    if result is None:
+        raise HTTPException(status_code=404, detail="风险研判不存在：%d" % item_id)
+    return result
 
 
 # ==============================================================================
@@ -172,3 +221,29 @@ def api_stats():
 @router.get("/api/audit", summary="API调用审计日志")
 def api_audit(limit: int = Query(20, ge=1, le=100)):
     return {"logs": simulator.get_api_audit_logs(limit=limit)}
+
+
+# ==============================================================================
+# Excel 导入/导出（风险研判）
+# ==============================================================================
+
+@router.get("/risks/export", summary="导出风险研判 Excel")
+def export_risks():
+    from common.excel_utils import download_xlsx
+    risks = simulator.list_risks(page=1, page_size=99999)["data"]
+    return download_xlsx(risks, "risk_analysis.xlsx", "风险研判")
+
+
+@router.post("/risks/import", summary="从 Excel 导入风险研判")
+def import_risks(file: UploadFile = File(...)):
+    content = file.file.read()
+    from common.excel_utils import import_from_excel
+    parsed = import_from_excel(content)
+    created = []
+    for row in parsed["rows"]:
+        try:
+            risk = simulator.create_risk(row)
+            created.append(risk)
+        except Exception:
+            pass  # skip invalid rows
+    return {"status": "success", "imported": len(created), "total_rows": len(parsed["rows"])}

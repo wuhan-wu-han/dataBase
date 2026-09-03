@@ -60,9 +60,13 @@ def from_json(raw, default=None):
 def init_db():
     """建表（幂等）。需先让模型模块完成注册。"""
     try:
-        from . import workorder_tables, plan_tables          # 作为包导入
+        from . import (
+            workorder_tables, plan_tables,       # 已有模块
+            risk_analysis_tables, hazmat_tables, tunnel_tables, asset_cost_tables,  # 新增模块
+        )
     except ImportError:
-        import workorder_tables, plan_tables                 # 作为顶层模块导入
+        import workorder_tables, plan_tables
+        import risk_analysis_tables, hazmat_tables, tunnel_tables, asset_cost_tables
     Base.metadata.create_all(bind=engine)
 
 

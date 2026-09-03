@@ -14,9 +14,10 @@ import subprocess
 import sys
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 
 from . import simulator as sim
+from . import store as tstore
 from .conflict import detect_conflicts
 from .models import (
     ACCESS_GATES,
@@ -169,30 +170,14 @@ def get_env_thresholds():
 # ==============================================================================
 
 
-@router.get("/alarms", summary="告警列表")
-def get_alarms(level: int = None, cabin: str = None, status: str = None,
-               limit: int = 50):
+@router.get("/alarms", summary="告警列表（分页）")
+def get_alarms(page: int = 1, page_size: int = 20, cabin: str = None, status: str = None, metric: str = None):
     """告警列表（默认按时间倒序，支持级别/舱室/状态过滤）"""
     validate_cabin(cabin)
-    if level is not None and level not in (1, 2):
-        raise HTTPException(status_code=422, detail="level 必须是 1(预警) 或 2(严重)")
     if status is not None and status not in ("未处理", "处理中", "已处理"):
         raise HTTPException(status_code=422, detail="status 必须是 未处理/处理中/已处理")
-    if not 1 <= limit <= 100:
-        raise HTTPException(status_code=422, detail="limit 必须在 1~100")
-
-    result = []
-    for alarm in sim.get_snapshot()["alarms"]:
-        if level and alarm["level"] != level:
-            continue
-        if cabin and alarm["cabin"] != cabin:
-            continue
-        if status and alarm["status"] != status:
-            continue
-        result.append(alarm)
-        if len(result) >= limit:
-            break
-    return {"total": len(result), "alarms": result}
+    result = tstore.list_alarms(page, page_size, cabin or "", status or "", metric or "")
+    return {"data": result["data"], "total": result["total"]}
 
 
 @router.get("/alarms/stats", summary="告警统计")
@@ -220,7 +205,12 @@ def acknowledge_alarm(alarm_id: str):
     """将告警标记为已处理"""
     alarm = sim.acknowledge_alarm(alarm_id)
     if alarm is None:
-        raise HTTPException(status_code=404, detail="告警不存在: %s" % alarm_id)
+        # Try store layer as fallback
+        existing = tstore.get_alarm(alarm_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="告警不存在: %s" % alarm_id)
+        updated = tstore.update_alarm(alarm_id, {"status": "已处理"})
+        return {"status": "success", "message": "告警已确认", "alarm": updated}
     return {"status": "success", "message": "告警已确认", "alarm": alarm}
 
 
@@ -229,18 +219,23 @@ def acknowledge_alarm(alarm_id: str):
 # ==============================================================================
 
 
-@router.get("/pipelines", summary="管线台账")
-def get_pipelines(pipeline_type: str = None, cabin: str = None):
-    """管线台账列表，可按类型/舱室过滤"""
+@router.get("/pipelines", summary="管线台账（分页）")
+def get_pipelines(page: int = 1, page_size: int = 20, pipeline_type: str = None, cabin: str = None, status: str = None):
+    """管线台账列表，可按类型/舱室/状态过滤"""
     validate_cabin(cabin)
     if pipeline_type is not None and pipeline_type not in PIPELINE_TYPES:
         raise HTTPException(status_code=422,
                             detail="pipeline_type 必须是 %s 之一" % "/".join(PIPELINE_TYPES))
-    pipelines = sim.get_pipelines()
-    result = [p for p in pipelines
-              if (not pipeline_type or p["pipeline_type"] == pipeline_type)
-              and (not cabin or p["cabin"] == cabin)]
-    return {"total": len(result), "pipelines": result}
+    result = tstore.list_pipelines(page, page_size, cabin or "", pipeline_type or "", status or "")
+    return {"data": result["data"], "total": result["total"]}
+
+
+@router.get("/pipelines/{pipeline_id}", summary="管线详情")
+def get_pipeline_detail(pipeline_id: str):
+    pipeline = tstore.get_pipeline(pipeline_id)
+    if pipeline is None:
+        raise HTTPException(status_code=404, detail="管线不存在: %s" % pipeline_id)
+    return pipeline
 
 
 @router.post("/pipelines", summary="新增管线")
@@ -248,7 +243,22 @@ def create_pipeline(request: PipelineCreateRequest):
     """新增入廊管线，自动编号并即时重算冲突"""
     data = request.model_dump() if hasattr(request, "model_dump") else request.dict()
     validate_pipeline_fields(data)
-    pipeline = sim.add_pipeline(data)
+    # Auto-generate pipeline_id like the old sim.add_pipeline
+    cabin = data["cabin"]
+    prefix = "PL-%s-" % cabin
+    existing_pipes = [p for p in sim.get_pipelines() if p["pipeline_id"].startswith(prefix)]
+    max_seq = 0
+    for pipe in existing_pipes:
+        try:
+            max_seq = max(max_seq, int(pipe["pipeline_id"].split("-")[-1]))
+        except ValueError:
+            continue
+    data["pipeline_id"] = "PL-%s-%03d" % (cabin, max_seq + 1)
+    data["commission_date"] = datetime.now().strftime("%Y-%m-%d")
+    pipeline = tstore.create_pipeline(data)
+    # Also sync into in-memory list for conflict detection
+    sim_sync = dict(data)
+    sim._pipelines.append(sim_sync)
     conflicts = detect_conflicts(sim.get_pipelines())
     related = [c for c in conflicts if pipeline["pipeline_id"] in c["pipeline_ids"]]
     return {"status": "success", "pipeline": pipeline,
@@ -261,16 +271,23 @@ def update_pipeline(pipeline_id: str, request: PipelineUpdateRequest):
     data = {k: v for k, v in
             (request.model_dump() if hasattr(request, "model_dump") else request.dict()).items()
             if v is not None}
-    existing = next((p for p in sim.get_pipelines()
-                     if p["pipeline_id"] == pipeline_id), None)
-    if existing is None:
+    merged = tstore.get_pipeline(pipeline_id)
+    if merged is None:
         raise HTTPException(status_code=404, detail="管线不存在: %s" % pipeline_id)
-    merged = dict(existing)
     merged.update(data)
     validate_pipeline_fields(merged)
-    pipeline = sim.update_pipeline(pipeline_id, data)
-    return {"status": "success", "pipeline": pipeline,
+    updated = tstore.update_pipeline(pipeline_id, data)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="管线不存在: %s" % pipeline_id)
+    return {"status": "success", "pipeline": updated,
             "conflict_count": len(detect_conflicts(sim.get_pipelines()))}
+
+
+@router.delete("/pipelines/{pipeline_id}", summary="删除管线")
+def delete_pipeline(pipeline_id: str):
+    if not tstore.delete_pipeline(pipeline_id):
+        raise HTTPException(status_code=404, detail="管线不存在: %s" % pipeline_id)
+    return {"message": "管线已删除"}
 
 
 @router.get("/pipelines/conflicts", summary="空间冲突检测")
@@ -312,12 +329,10 @@ def get_security_overview():
     }
 
 
-@router.get("/security/access", summary="门禁出入记录")
-def get_access_records(limit: int = 20):
-    if not 1 <= limit <= 100:
-        raise HTTPException(status_code=422, detail="limit 必须在 1~100")
-    records = sim.get_snapshot()["security"]["access_records"][:limit]
-    return {"total": len(records), "records": records}
+@router.get("/security/access", summary="门禁出入记录（分页）")
+def get_access_records(page: int = 1, page_size: int = 20, gate_id: str = "", person_id: str = ""):
+    result = tstore.list_access_records(page, page_size, gate_id, person_id)
+    return {"data": result["data"], "total": result["total"]}
 
 
 @router.post("/security/access", summary="登记出入记录")
@@ -420,3 +435,42 @@ def run_workflow(count: int = 50000, background_tasks: BackgroundTasks = None):
                 "count": count, "estimated_time": "约3-5分钟"}
     run_tunnel_pipeline(count, os.path.join("data", "logs"))
     return {"status": "finished", "message": workflow_status["message"]}
+
+
+# ==============================================================================
+# Excel 导入/导出（管廊管控）
+# ==============================================================================
+
+@router.get("/pipelines/export", summary="导出管线台账 Excel")
+def export_pipelines():
+    from common.excel_utils import download_xlsx
+    data = tstore.list_pipelines(page=1, page_size=99999)["data"]
+    return download_xlsx(data, "tunnel_pipelines.xlsx", "管线台账")
+
+@router.post("/pipelines/import", summary="从 Excel 导入管线台账")
+def import_pipelines(file: UploadFile = File(...)):
+    content = file.file.read()
+    from common.excel_utils import import_from_excel
+    parsed = import_from_excel(content)
+    created = []
+    for row in parsed["rows"]:
+        try:
+            tstore.create_pipeline(row)
+            created.append(row)
+        except Exception:
+            pass
+    # Sync into memory for conflict detection
+    sim._reload()
+    return {"status": "success", "imported": len(created), "total_rows": len(parsed["rows"])}
+
+@router.get("/alarms/export", summary="导出环境告警 Excel")
+def export_alarms():
+    from common.excel_utils import download_xlsx
+    data = tstore.list_alarms(page=1, page_size=99999)["data"]
+    return download_xlsx(data, "tunnel_alarms.xlsx", "环境告警")
+
+@router.get("/security/access/export", summary="导出门禁记录 Excel")
+def export_access_records():
+    from common.excel_utils import download_xlsx
+    data = tstore.list_access_records(page=1, page_size=99999)["data"]
+    return download_xlsx(data, "tunnel_access.xlsx", "门禁记录")
