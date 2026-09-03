@@ -22,6 +22,17 @@
     fastapi, uvicorn, pandas, numpy, scikit-learn, joblib
 """
 
+# Windows 控制台默认 GBK 编码，子模块启动时会 print 含 ✓/⚠ 等 Unicode 字符的日志，
+# 触发 UnicodeEncodeError 导致整个服务在导入阶段崩溃（前端表现为所有接口 500）。
+# 在最早的时机把标准流强制为 UTF-8，彻底规避该崩溃。
+import sys as _sys
+for _stream_name in ("stdout", "stderr"):
+    _stream = getattr(_sys, _stream_name, None)
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles

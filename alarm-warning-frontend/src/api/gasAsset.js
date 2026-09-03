@@ -4,22 +4,21 @@
  * 所有请求通过 api-gateway:8080 转发到 gas_asset_manage:8001
  *
  * 网关路由：/api/gas-asset/** → 8001，StripPrefix=2
+ *
+ * 注意：后端是 FastAPI，直接返回业务 JSON，无 { code:200, data:... } 包裹层。
+ * gateway.js 拦截器已返回 response.data（即后端原始 JSON），
+ * 此处直接 return http 调用结果，不再额外解包。
  */
 import { createModuleHttp, MODULE_PREFIX } from './gateway'
 
 const http = createModuleHttp(MODULE_PREFIX.gasAsset)
 
-// 统一封装：GET
-async function get(url, params) {
-  const { data } = await http.get(url, { params })
-  return data
-}
+// 统一封装：GET（直接返回后端 JSON，不再解包 .data）
+const get = (url, params) => http.get(url, { params })
 
-// 统一封装：POST/PUT
-async function send(method, url, body) {
-  const { data } = await http.request({ method, url, data: body })
-  return data
-}
+// 统一封装：POST/PUT（直接返回后端 JSON，不再解包 .data）
+const send = (method, url, body) =>
+  http.request({ method, url, data: body })
 
 export const EXPORT_URL = `${MODULE_PREFIX.gasAsset}/api/assets/export`
 

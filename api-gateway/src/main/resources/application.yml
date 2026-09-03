@@ -46,7 +46,18 @@ spring:
           filters:
             - StripPrefix=2
 
-        # ── 4. 分级分类预警引擎 (Java :8085) ──
+        # ── 4. Python 综合服务平台 (Python :8000) ──
+        # 前端请求 /api/platform/governance/overview
+        # StripPrefix=2 剥掉 /api/platform，转发至 8000:/governance/overview
+        # 覆盖模块：数据治理、危化品、管廊、预案、资产成本、工单
+        - id: python-platform
+          uri: http://localhost:8000
+          predicates:
+            - Path=/api/platform/**
+          filters:
+            - StripPrefix=2
+
+        # ── 5. 分级分类预警引擎 (Java :8085) ──
         # 兜底路由：主平台 API 路径已含 /api 前缀（如 /api/alerts）
         # 直接转发，不做 StripPrefix
         - id: alarm-warning-service

@@ -8,17 +8,16 @@
  */
 import { onBeforeUnmount, onMounted, shallowRef } from 'vue'
 import * as echarts from 'echarts/core'
-import { LineChart, PieChart, BarChart } from 'echarts/charts'
+import { LineChart, PieChart, BarChart, GaugeChart } from 'echarts/charts'
 import {
-  TooltipComponent, GridComponent, LegendComponent
+  TooltipComponent, GridComponent, LegendComponent, TitleComponent
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
-// 按需注册：仅 Dashboard 折线图与 FailurePrediction 环形图所需组件
-// 未引入 TitleComponent/DatasetComponent 等未使用模块以减小打包体积
+// 按需注册：Dashboard 折线图 / FailurePrediction 环形图 / 燃气风控仪表盘
 echarts.use([
-  LineChart, PieChart, BarChart,
-  TooltipComponent, GridComponent, LegendComponent,
+  LineChart, PieChart, BarChart, GaugeChart,
+  TooltipComponent, GridComponent, LegendComponent, TitleComponent,
   CanvasRenderer
 ])
 
@@ -32,18 +31,21 @@ export function useEChart(elRef) {
   const chart = shallowRef(null)
   let ro = null
 
-  onMounted(() => {
+  // 懒初始化：确保 chart 实例存在（onMounted 可能因 DOM 时序错过）
+  function ensureInit() {
+    if (chart.value) return true
     const el = elRef.value
-    if (!el) return
+    if (!el) return false
     chart.value = echarts.init(el, null, { renderer: 'canvas' })
-
-    // ResizeObserver 监听容器尺寸变化（侧边栏折叠/窗口 resize 均触发）
     if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(() => {
-        chart.value && chart.value.resize()
-      })
+      ro = new ResizeObserver(() => chart.value && chart.value.resize())
       ro.observe(el)
     }
+    return true
+  }
+
+  onMounted(() => {
+    ensureInit()
   })
 
   onBeforeUnmount(() => {
@@ -57,18 +59,21 @@ export function useEChart(elRef) {
     }
   })
 
-  // 设置/合并配置项
+  // 设置/合并配置项（首次调用时自动初始化）
   function setOption(option, opts) {
-    if (chart.value) chart.value.setOption(option, opts)
+    if (!ensureInit()) return
+    chart.value.setOption(option, opts)
   }
 
   // 手动触发 resize
   function resize() {
-    chart.value && chart.value.resize()
+    if (!ensureInit()) return
+    chart.value.resize()
   }
 
   // 获取底层实例（用于高级操作）
   function getInstance() {
+    ensureInit()
     return chart.value
   }
 

@@ -36,6 +36,10 @@ export const fetchSensors = () => http.get('/api/monitoring/sensors')
 // 实时监测数据
 export const fetchRealtime = () => http.get('/api/monitoring/realtime')
 
+// 历史趋势数据（10 分钟）
+export const fetchHistory = (sensorId, minutes = 10) =>
+  http.get('/api/monitoring/history', { params: { sensor_id: sensorId, minutes } })
+
 // 报警事件列表
 export const fetchAlarms = (limit = 30) =>
   http.get('/api/monitoring/alarms', { params: { limit } })

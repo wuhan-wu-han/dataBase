@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import ModulePlaceholder from '@/views/ModulePlaceholder.vue'
 
 // 路由配置：AppLayout 作为父路由，所有业务路由嵌套其下，统一布局
 const routes = [
@@ -63,42 +62,42 @@ const routes = [
         meta: { title: '道路塌陷' }
       },
 
-      // ===== 占位模块（未实现后端，复用 ModulePlaceholder） =====
+      // ===== 新增业务模块 =====
       {
         path: 'risk-analysis',
         name: 'RiskAnalysis',
-        component: ModulePlaceholder,
-        meta: { title: '风险评估', moduleName: '风险评估' }
+        component: () => import('@/views/riskAnalysis/Index.vue'),
+        meta: { title: '风险研判' }
       },
       {
         path: 'hazmat',
         name: 'Hazmat',
-        component: ModulePlaceholder,
-        meta: { title: '危化品监管', moduleName: '危化品监管' }
+        component: () => import('@/views/hazmat/Index.vue'),
+        meta: { title: '危化品监管' }
       },
       {
         path: 'utility-tunnel',
         name: 'UtilityTunnel',
-        component: ModulePlaceholder,
-        meta: { title: '综合管廊', moduleName: '综合管廊' }
+        component: () => import('@/views/tunnel/Index.vue'),
+        meta: { title: '综合管廊' }
       },
       {
         path: 'emergency-plan',
         name: 'EmergencyPlan',
-        component: ModulePlaceholder,
-        meta: { title: '应急预案', moduleName: '应急预案' }
+        component: () => import('@/views/emergencyPlan/Index.vue'),
+        meta: { title: '应急预案' }
       },
       {
         path: 'asset-cost',
         name: 'AssetCost',
-        component: ModulePlaceholder,
-        meta: { title: '资产成本', moduleName: '资产成本' }
+        component: () => import('@/views/assetCost/Index.vue'),
+        meta: { title: '资产成本' }
       },
       {
         path: 'work-order',
         name: 'WorkOrder',
-        component: ModulePlaceholder,
-        meta: { title: '工单管理', moduleName: '工单管理' }
+        component: () => import('@/views/workOrder/Index.vue'),
+        meta: { title: '工单管理' }
       }
     ]
   },

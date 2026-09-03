@@ -20,16 +20,20 @@ export const GATEWAY_BASE = '/api'
 export const MODULE_PREFIX = {
   alarm: '/api/alert',          // 主平台预警服务
   gasRisk: '/api/gas-risk',     // 燃气风控
-  gasAsset: '/api/gas-asset',  // 资产管理
-  roadHazard: '/api/road-hazard' // 道路塌陷
+  gasAsset: '/api/gas-asset',   // 资产管理
+  roadHazard: '/api/road-hazard', // 道路塌陷
+  platform: '/api/platform'     // Python 综合服务（治理/危化品/管廊/预案/成本/工单）
 }
 
 /**
  * 创建带统一拦截器的 axios 实例
  * @param {string} prefix - 模块前缀（见 MODULE_PREFIX）
+ * @param {{ silentErrors?: boolean }} options - silentErrors=true 时不弹出全局错误提示，
+ *        由调用方（API 层）自行降级到 Mock 数据，避免页面出现"系统内部错误/AxiosError"
  * @returns {import('axios').AxiosInstance}
  */
-export function createModuleHttp(prefix) {
+export function createModuleHttp(prefix, options = {}) {
+  const silentErrors = !!options.silentErrors
   const instance = axios.create({
     baseURL: prefix,
     timeout: 15000
@@ -45,11 +49,14 @@ export function createModuleHttp(prefix) {
   instance.interceptors.response.use(
     (response) => response.data,
     (error) => {
-      const message = error.response?.data?.detail
-        || error.response?.data?.message
-        || error.message
-        || '请求失败'
-      ElMessage.error(message)
+      if (!silentErrors) {
+        const message = error.response?.data?.detail
+          || error.response?.data?.message
+          || error.message
+          || '请求失败'
+        ElMessage.error(message)
+      }
+      // 始终 reject，交由 API 层 catch 后降级为 Mock 数据
       return Promise.reject(error)
     }
   )

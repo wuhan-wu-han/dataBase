@@ -225,6 +225,38 @@ a:hover {
   border-radius: var(--app-radius-control);
 }
 
+/* ===================== 操作列固定列重叠修复 + 统一按钮布局 ===================== */
+/* Element Plus 2.x 的 fixed 列使用 position: sticky。当表格横向溢出时，
+   固定列若背景透明，会让其下层滚动的数字列透出，造成「操作按钮与数字重叠混显」。
+   这里用普通全局选择器强制固定列及其单元格为不透明背景，彻底消除穿透。
+   （注意：本文件为全局样式，:deep() 在此不生效，故一律使用普通后代选择器。） */
+.app-table .el-table__cell,
+.app-table .el-table .el-table-fixed-column--left,
+.app-table .el-table .el-table-fixed-column--right {
+  background-color: #FFFFFF;
+}
+/* 行 hover 时固定列同样需要不透明，取浅灰实色与页面主背景一致 */
+.app-table .el-table__row:hover .el-table-fixed-column--left,
+.app-table .el-table__row:hover .el-table-fixed-column--right {
+  background-color: #F5F7FB;
+}
+/* 所有固定右列（即操作列）内容统一横向居中排布，按钮间距 12px */
+.app-table .el-table-fixed-column--right .cell {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+/* 可复用的操作列按钮容器（模板内显式包裹时使用） */
+.table-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 /* 卡片内部小标题（统一图表卡片头部样式） */
 .card-title {
   display: flex;
