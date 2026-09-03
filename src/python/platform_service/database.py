@@ -3,8 +3,10 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-# SQLite数据库路径
-DATABASE_URL = "sqlite:///./data.db"
+# SQLite数据库路径：锚定到本文件所在目录，避免因启动工作目录不同而把 data.db 生成到别处
+# Windows 反斜杠转正斜杠，兼容 SQLAlchemy 的 sqlite:/// URL 格式
+_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.db")
+DATABASE_URL = "sqlite:///" + _DB_PATH.replace("\\", "/")
 
 # 创建引擎
 engine = create_engine(
