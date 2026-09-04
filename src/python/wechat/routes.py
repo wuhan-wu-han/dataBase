@@ -17,7 +17,7 @@ from typing import Dict, List
 from fastapi import Request
 from fastapi.responses import PlainTextResponse
 
-from assistant.service import run_chat
+from assistant.service import run_simple_chat
 
 _executor = ThreadPoolExecutor(max_workers=4)
 
@@ -72,8 +72,6 @@ async def wechat_verify(request: Request) -> PlainTextResponse:
     tok = _token()
     tmp = sorted([tok, ts, nonce])
     computed = hashlib.sha1("".join(tmp).encode()).hexdigest()
-    print(f"[wechat-verify] token={tok!r} ts={ts} nonce={nonce}")
-    print(f"[wechat-verify] sorted={tmp} computed={computed} expected={sig} match={computed==sig}")
     if computed == sig:
         return PlainTextResponse(echostr)
     return PlainTextResponse("forbidden", status_code=403)
@@ -108,23 +106,21 @@ async def wechat_message(request: Request) -> PlainTextResponse:
     # 获取/创建用户对话历史
     history = _sessions.setdefault(from_user, [])
 
-    # 调用助手（线程池 + 4秒超时，微信要求5秒内响应）
-    t0 = time.time()
+    # 调用助手（线程池 + 4.8秒超时，微信要求5秒内响应）
+    # run_simple_chat 不走工具调用，直接 LLM 回答，通常 2-4 秒内完成
     print(f"[wechat-msg] user={from_user} content={content!r}")
     loop = asyncio.get_event_loop()
     try:
         result = await asyncio.wait_for(
-            loop.run_in_executor(_executor, run_chat, content, history),
-            timeout=8.0
+            loop.run_in_executor(_executor, run_simple_chat, content, history),
+            timeout=4.8
         )
-        elapsed = time.time() - t0
         answer = result.get("answer", "")
-        print(f"[wechat-msg] done in {elapsed:.1f}s success={result.get('success')} answer_len={len(answer)}")
         if not result.get("success"):
             answer = "抱歉，助手暂时出现问题，请稍后重试。"
+        print(f"[wechat-msg] replied: success={result.get('success')} len={len(answer)}")
     except asyncio.TimeoutError:
-        elapsed = time.time() - t0
-        print(f"[wechat-msg] TIMEOUT after {elapsed:.1f}s (limit 8s)")
+        print(f"[wechat-msg] TIMEOUT after 4.8s")
         answer = "查询耗时较长，请稍后再发一次相同问题。"
 
     # 追加到历史
@@ -135,5 +131,4 @@ async def wechat_message(request: Request) -> PlainTextResponse:
     _evict(_sessions, _MAX_SESSIONS)
 
     xml_reply = _text_reply(from_user, to_user, answer)
-    print(f"[wechat-msg] reply_xml_len={len(xml_reply)}")
     return PlainTextResponse(xml_reply, media_type="application/xml")

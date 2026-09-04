@@ -74,3 +74,27 @@ def run_chat(message: str, history: Optional[List[Dict[str, str]]] = None) -> Di
 
     return {"success": True, "answer": answer, "action": action,
             "tool_results": tool_results, "model": config.DEEPSEEK_MODEL}
+
+
+WECHAT_PROMPT = (
+    "你是安塞区城市安全生命线管网AI智慧平台的智能助手。"
+    "简洁回答用户问题，控制在100字以内。涉及实时数据时说明"请在平台Web端查询最新数据"。"
+)
+
+
+def run_simple_chat(message: str, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+    """快速对话（不走工具调用），用于微信等 5 秒内必须响应的场景。"""
+    messages: List[Dict[str, str]] = [{"role": "system", "content": WECHAT_PROMPT}]
+    if history:
+        for h in history[-4:]:
+            messages.append({"role": h["role"], "content": h["content"]})
+    messages.append({"role": "user", "content": message})
+
+    try:
+        msg = llm.chat(messages)
+        answer = msg.get("content") or ""
+        return {"success": True, "answer": answer}
+    except llm.LLMError as exc:
+        return {"success": False, "error": str(exc), "answer": ""}
+    except Exception as exc:
+        return {"success": False, "error": str(exc), "answer": ""}
