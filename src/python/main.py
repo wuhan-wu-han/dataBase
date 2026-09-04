@@ -148,6 +148,14 @@ except ImportError:
     from src.python.assistant import router as assistant_router  # 项目根启动
 app.include_router(assistant_router)
 
+# 注册微信公众号/测试号消息回调（兼容两种启动方式）
+try:
+    from wechat.routes import wechat_verify, wechat_message
+except ImportError:
+    from src.python.wechat.routes import wechat_verify, wechat_message
+app.add_api_route("/wechat", wechat_verify, methods=["GET"], include_in_schema=False)
+app.add_api_route("/wechat", wechat_message, methods=["POST"], include_in_schema=False)
+
 # ==============================================================================
 # 全局变量定义
 # ==============================================================================
