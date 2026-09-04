@@ -287,7 +287,65 @@
 
           <div v-if="selected.latlng" class="gis-detail__actions">
             <el-button size="small" :icon="Position" @click="navigateFromSelected">从这里出发</el-button>
+            <el-button
+              v-if="selectedEmergencyEligible"
+              size="small"
+              type="danger"
+              plain
+              :loading="emergencyLoading"
+              @click="startEmergencyAnalysis"
+            >应急推演</el-button>
           </div>
+
+          <section v-if="emergencyActive" class="emergency-panel">
+            <div class="emergency-panel__title">
+              <strong>应急处置辅助</strong>
+              <el-tag size="small" type="danger" effect="plain">影响半径 {{ impactRadius }}m</el-tag>
+            </div>
+
+            <div class="emergency-kpis">
+              <div><b>{{ impactedDevices.length }}</b><span>影响设备</span></div>
+              <div><b>{{ nearestTeam?.name || '--' }}</b><span>推荐队伍</span></div>
+            </div>
+
+            <p v-if="nearestTeam" class="emergency-team">
+              {{ nearestTeam.status_name }} · {{ nearestTeam.location }} ·
+              {{ nearestTeam.distance_m }}m · 匹配度 {{ nearestTeam.total_score }}
+            </p>
+
+            <div class="emergency-actions">
+              <el-button size="small" @click="focusImpactArea">查看影响圈</el-button>
+              <el-button
+                size="small"
+                type="primary"
+                :loading="aiLoading"
+                @click="generateAiPlan"
+              >AI 处置方案</el-button>
+              <el-button
+                size="small"
+                type="success"
+                :disabled="!!createdOrder"
+                :loading="orderLoading"
+                @click="createEmergencyOrder"
+              >{{ createdOrder ? createdOrder.order_id : '一键生成工单' }}</el-button>
+            </div>
+
+            <div v-if="aiPlan" class="emergency-plan">{{ aiPlan }}</div>
+
+            <el-timeline v-if="emergencyTimeline.length" class="emergency-timeline">
+              <el-timeline-item
+                v-for="(item, index) in emergencyTimeline"
+                :key="`${item.at}-${index}`"
+                :timestamp="item.at"
+                placement="top"
+                size="small"
+                :type="index === emergencyTimeline.length - 1 ? 'primary' : ''"
+              >
+                <b>{{ item.step_name }}</b>
+                <p>{{ item.note }}</p>
+              </el-timeline-item>
+            </el-timeline>
+          </section>
         </div>
 
         <footer class="gis-detail__foot">
@@ -366,6 +424,8 @@ import {
 } from '@/config/gisLayers'
 import { waitBMap, buildMarkerIcon, buildClusterIcon, buildDotIcon } from '@/utils/baidumap'
 import { searchPlace as backendSearchPlace, convertCoords, planDriving as backendPlanDriving } from '@/api/baiduMap'
+import { sendChat } from '@/api/assistant'
+import { createOrder, getDispatchRecommend, assignOrder, getProcess } from '@/api/workOrder'
 
 const router = useRouter()
 const route = useRoute()
@@ -388,6 +448,16 @@ const statusFilter = ref('')
 const panelCollapsed = ref(false)
 const drawerVisible = ref(false)
 const selected = ref(null)
+const emergencyActive = ref(false)
+const emergencyLoading = ref(false)
+const aiLoading = ref(false)
+const orderLoading = ref(false)
+const impactedDevices = ref([])
+const nearestTeam = ref(null)
+const aiPlan = ref('')
+const createdOrder = ref(null)
+const emergencyEvents = ref([])
+const orderTimeline = ref([])
 
 const isMobile = ref(false)
 const mobileSearch = ref(false)
@@ -435,6 +505,7 @@ let clusterMarkers = []       // 聚合覆盖物
 let networkNodes = []         // 网络节点覆盖物
 let highlightOverlay = null   // 当前选中高亮覆盖物
 let selectedOverlay = null    // 选中描边覆盖物
+let impactCircleOverlay = null // 当前告警影响范围
 
 // ---------------------------------------------------------------------------
 // 视野控制：默认聚焦安塞区检测区域
@@ -608,6 +679,63 @@ const detailRows = computed(() => {
   }
   return rows
 })
+
+const selectedEmergencyEligible = computed(() => {
+  const sel = selected.value
+  return !!sel?.latlng && (sel.key === 'alert' || sel.key === 'hazard' || sel.risk !== 'normal')
+})
+
+const impactRadius = computed(() => ({
+  high: 1000,
+  elevated: 700,
+  medium: 450,
+  low: 250,
+  normal: 200
+}[selected.value?.risk] || 450))
+
+const emergencyTimeline = computed(() => {
+  const process = orderTimeline.value.map((item) => ({
+    step_name: item.step_name || item.step || '工单处置',
+    at: item.at || '',
+    note: item.note || ''
+  }))
+  return [...emergencyEvents.value, ...process]
+})
+
+function emergencyTime() {
+  return new Date().toLocaleTimeString('zh-CN', { hour12: false })
+}
+
+function addEmergencyEvent(stepName, note) {
+  emergencyEvents.value.push({ step_name: stepName, note, at: emergencyTime() })
+}
+
+function haversineMeters(a, b) {
+  const toRad = (value) => value * Math.PI / 180
+  const lat1 = toRad(Number(a[1]))
+  const lat2 = toRad(Number(b[1]))
+  const dLat = lat2 - lat1
+  const dLng = toRad(Number(b[0]) - Number(a[0]))
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+  return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
+}
+
+function requiredSkillForSelection(sel) {
+  const text = `${sel?.title || ''} ${sel?.properties?.device_type || ''}`
+  if (sel?.key === 'hazard' || /沉降|塌陷|道路/.test(text)) return '土建维修'
+  if (/通信|网络/.test(text)) return '弱电网络'
+  if (/仪表|传感|压力|浓度/.test(text)) return '仪表调试'
+  return '管道抢修'
+}
+
+function categoryForSelection(sel) {
+  const skill = requiredSkillForSelection(sel)
+  return ({ '土建维修': 'civil', '弱电网络': 'it', '仪表调试': 'instrument', '管道抢修': 'pipeline' })[skill]
+}
+
+function priorityForRisk(risk) {
+  return ({ high: 'urgent', elevated: 'high', medium: 'medium', low: 'low' })[risk] || 'medium'
+}
 
 // ---------------------------------------------------------------------------
 // 右侧业务态势与底部指标（全部由当前数据通道的记录与汇总派生）
@@ -1424,6 +1552,7 @@ function openFeatureInfoWindow(cfg, feature, coords) {
 
 function selectFeature(cfg, feature, overlay, coords) {
   clearHighlight()
+  resetEmergencyAnalysis()
   const props = feature.properties
   const item = overlayMap[cfg.key]?.find((entry) => entry.feature === feature)
   const pointCoords = cfg.geometry === 'point'
@@ -1518,7 +1647,134 @@ async function locateAlarm(alarm) {
 
 function onDrawerClosed() {
   clearHighlight()
+  resetEmergencyAnalysis()
   selected.value = null
+}
+
+function clearImpactCircle() {
+  if (!impactCircleOverlay || !map) return
+  try { map.removeOverlay(impactCircleOverlay) } catch { /* noop */ }
+  impactCircleOverlay = null
+}
+
+function resetEmergencyAnalysis() {
+  clearImpactCircle()
+  emergencyActive.value = false
+  impactedDevices.value = []
+  nearestTeam.value = null
+  aiPlan.value = ''
+  createdOrder.value = null
+  emergencyEvents.value = []
+  orderTimeline.value = []
+}
+
+function drawImpactCircle() {
+  const sel = selected.value
+  if (!sel?.latlng || !map || !BMap) return
+  clearImpactCircle()
+  const [lng, lat] = sel.latlng
+  const meta = RISK_LEVELS[sel.risk] || RISK_LEVELS.medium
+  impactCircleOverlay = new BMap.Circle(new BMap.Point(lng, lat), impactRadius.value, {
+    strokeColor: meta.color,
+    strokeWeight: 2,
+    strokeOpacity: 0.7,
+    strokeStyle: 'dashed',
+    fillColor: meta.color,
+    fillOpacity: 0.1,
+    enableEditing: false
+  })
+  map.addOverlay(impactCircleOverlay)
+}
+
+function collectImpactedDevices() {
+  const center = selected.value?.latlng
+  if (!center) return []
+  return ['asset', 'manhole'].flatMap((key) => (overlayMap[key] || [])
+    .filter((item) => Array.isArray(item.bdCoords) && !Array.isArray(item.bdCoords[0]))
+    .map((item) => ({
+      key,
+      title: item.feature?.properties?._title || LAYER_MAP[key]?.label,
+      distance: Math.round(haversineMeters(center, item.bdCoords))
+    })))
+    .filter((item) => item.distance <= impactRadius.value)
+    .sort((a, b) => a.distance - b.distance)
+}
+
+async function startEmergencyAnalysis() {
+  if (!selectedEmergencyEligible.value) return
+  emergencyLoading.value = true
+  emergencyActive.value = true
+  drawImpactCircle()
+  impactedDevices.value = collectImpactedDevices()
+  emergencyEvents.value = []
+  addEmergencyEvent('告警确认', `已确认“${selected.value.title}”，启动应急处置分析`)
+  addEmergencyEvent('影响分析', `影响半径 ${impactRadius.value} 米，范围内识别到 ${impactedDevices.value.length} 台设备`)
+  try {
+    const result = await getDispatchRecommend({
+      required_skill: requiredSkillForSelection(selected.value),
+      location: selected.value.area || selected.value.title
+    })
+    nearestTeam.value = result?.candidates?.[0] || null
+    if (nearestTeam.value) {
+      addEmergencyEvent('队伍匹配', `推荐 ${nearestTeam.value.name}，当前${nearestTeam.value.status_name}，综合得分 ${nearestTeam.value.total_score}`)
+    }
+  } catch (err) {
+    console.warn('[GIS] 应急队伍匹配失败:', err)
+    ElMessage.warning('影响范围已生成，暂时无法获取应急队伍')
+  } finally {
+    emergencyLoading.value = false
+  }
+}
+
+function focusImpactArea() {
+  if (!impactCircleOverlay || !map) return
+  try { map.setViewport(impactCircleOverlay.getBounds(), { margins: [70, 70, 70, 70] }) } catch { /* noop */ }
+}
+
+async function generateAiPlan() {
+  const sel = selected.value
+  if (!sel) return
+  aiLoading.value = true
+  try {
+    const prompt = `请为城市基础设施告警生成简洁、可执行的现场处置方案。\n事件：${sel.title}\n风险等级：${statusMeta.value.label}\n区域：${sel.area}\n影响半径：${impactRadius.value}米\n影响设备：${impactedDevices.value.length}台\n推荐人员：${nearestTeam.value?.name || '待调度'}。\n请按“立即措施、现场核查、安全隔离、恢复与复盘”五项输出，每项不超过两句，不虚构监测数据。`
+    const result = await sendChat(prompt)
+    aiPlan.value = result?.answer || 'AI 暂未返回处置建议，请按应急预案执行并联系值班负责人。'
+    addEmergencyEvent('AI 辅助研判', '处置建议已生成，等待值班人员确认')
+  } catch (err) {
+    console.warn('[GIS] AI 处置方案生成失败:', err)
+    ElMessage.error('AI 处置方案生成失败，请检查智能助手服务')
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+async function createEmergencyOrder() {
+  const sel = selected.value
+  if (!sel || createdOrder.value) return
+  orderLoading.value = true
+  try {
+    const order = await createOrder({
+      title: `应急处置-${sel.title}`,
+      channel: 'alarm',
+      category: categoryForSelection(sel),
+      priority: priorityForRisk(sel.risk),
+      location: sel.area || sel.title,
+      description: `GIS 告警联动生成；影响半径 ${impactRadius.value} 米，范围内设备 ${impactedDevices.value.length} 台。`,
+      reporter: 'GIS 综合态势平台'
+    })
+    createdOrder.value = order
+    if (nearestTeam.value?.staff_id) {
+      createdOrder.value = await assignOrder({ order_id: order.order_id, staff_id: nearestTeam.value.staff_id })
+    }
+    const process = await getProcess(order.order_id)
+    orderTimeline.value = process?.timeline || createdOrder.value?.process || []
+    ElMessage.success(`工单 ${order.order_id} 已生成${nearestTeam.value ? '并完成派单' : ''}`)
+  } catch (err) {
+    console.error('[GIS] 一键生成工单失败:', err)
+    ElMessage.error(err?.response?.data?.detail || '工单生成失败，请检查工单服务')
+  } finally {
+    orderLoading.value = false
+  }
 }
 
 function goModule() {
@@ -1725,6 +1981,64 @@ function clearRouteOverlay() {
   }
 }
 
+function formatRouteDistance(value) {
+  const meters = Number(value)
+  if (!Number.isFinite(meters)) return value || '--'
+  return meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`
+}
+
+function formatRouteDuration(value) {
+  const seconds = Number(value)
+  if (!Number.isFinite(seconds)) return value || '--'
+  const minutes = Math.max(1, Math.round(seconds / 60))
+  return minutes >= 60 ? `${Math.floor(minutes / 60)}小时${minutes % 60}分钟` : `${minutes}分钟`
+}
+
+function drawRoutePath(path, distance, duration) {
+  const pathPoints = (path || []).map((point) => {
+    if (Array.isArray(point)) return new BMap.Point(Number(point[0]), Number(point[1]))
+    return point
+  }).filter((point) => Number.isFinite(point?.lng) && Number.isFinite(point?.lat))
+  if (pathPoints.length < 2) throw new Error('路线返回的轨迹点不足')
+  routePolyline = new BMap.Polyline(pathPoints, {
+    strokeColor: '#1A73E8',
+    strokeWeight: 6,
+    strokeOpacity: 0.78,
+    strokeLineCap: 'round',
+    strokeLineJoin: 'round',
+    enableEditing: false
+  })
+  map.addOverlay(routePolyline)
+  map.setViewport(pathPoints)
+  navResult.value = { distance, duration }
+}
+
+function planDrivingWithBMap(start, end) {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error('百度地图路线检索超时')), 12000)
+    drivingRoute = new BMap.DrivingRoute(map, {
+      onSearchComplete(results) {
+        window.clearTimeout(timeout)
+        if (drivingRoute.getStatus() !== BMAP_STATUS_SUCCESS || !results?.getPlan?.(0)) {
+          reject(new Error('百度地图未找到可行驾车路线'))
+          return
+        }
+        const plan = results.getPlan(0)
+        const path = []
+        for (let index = 0; index < plan.getNumRoutes(); index += 1) {
+          path.push(...(plan.getRoute(index)?.getPath?.() || []))
+        }
+        resolve({
+          path,
+          distance: plan.getDistance(true),
+          duration: plan.getDuration(true)
+        })
+      }
+    })
+    drivingRoute.search(start, end)
+  })
+}
+
 async function doNavigate() {
   if (!navStartPoint.value || !navEndPoint.value) {
     ElMessage.warning('请先在地图上点击确定起点和终点')
@@ -1739,28 +2053,27 @@ async function doNavigate() {
       navStartPoint.value.lng, navStartPoint.value.lat,
       navEndPoint.value.lng, navEndPoint.value.lat
     )
-    navResult.value = { distance: result.distance, duration: result.duration }
-
-    // 后端已经解码好路径坐标数组，直接用 BMap.Polyline 绘制
-    const pathPoints = (result.path || []).map(([lng, lat]) => new BMap.Point(lng, lat))
-    if (pathPoints.length >= 2) {
-      routePolyline = new BMap.Polyline(pathPoints, {
-        strokeColor: '#1A73E8',
-        strokeWeight: 6,
-        strokeOpacity: 0.78,
-        strokeLineCap: 'round',
-        strokeLineJoin: 'round',
-        enableEditing: false
-      })
-      map.addOverlay(routePolyline)
-      map.setViewport([routePolyline])
-    }
+    drawRoutePath(
+      result.path,
+      formatRouteDistance(result.distance),
+      formatRouteDuration(result.duration)
+    )
 
     ElMessage.closeAll()
-    ElMessage.success(`路线规划完成：${result.distance}，约 ${result.duration}`)
+    ElMessage.success(`路线规划完成：${navResult.value.distance}，约 ${navResult.value.duration}`)
   } catch (err) {
-    ElMessage.closeAll()
-    ElMessage.error(err.message || '路线规划失败，请稍后重试')
+    // 部分百度 AK 只开通了 JavaScript 地图、未开通 DirectionLite Web API。
+    // 这种情况下自动复用已加载的 BMap 驾车检索能力，保证路线功能可用。
+    console.warn('[GIS] 后端路线服务不可用，切换 BMap SDK:', err?.response?.data?.detail || err.message)
+    try {
+      const fallback = await planDrivingWithBMap(navStartPoint.value, navEndPoint.value)
+      drawRoutePath(fallback.path, fallback.distance, fallback.duration)
+      ElMessage.closeAll()
+      ElMessage.success(`路线规划完成：${fallback.distance}，约 ${fallback.duration}`)
+    } catch (fallbackError) {
+      ElMessage.closeAll()
+      ElMessage.error(fallbackError.message || '路线规划失败，请检查百度地图服务权限')
+    }
   }
 }
 
@@ -2604,9 +2917,81 @@ onBeforeUnmount(() => {
 }
 
 .gis-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--app-border);
+}
+.gis-detail__actions .el-button { margin-left: 0; }
+
+.emergency-panel {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #f1d4cf;
+  border-radius: 10px;
+  background: #fffafa;
+}
+.emergency-panel__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--app-text-1);
+}
+.emergency-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.emergency-kpis > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--app-border);
+}
+.emergency-kpis b { font-size: 16px; color: #c3483e; }
+.emergency-kpis span { font-size: 11px; color: var(--app-text-3); }
+.emergency-team {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-2);
+}
+.emergency-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+.emergency-actions .el-button { margin-left: 0; }
+.emergency-plan {
+  margin-top: 12px;
+  padding: 10px;
+  border-left: 3px solid #409eff;
+  border-radius: 4px;
+  background: #f5f9ff;
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--app-text-2);
+}
+.emergency-timeline {
+  margin: 16px 0 0;
+  padding-left: 4px;
+}
+.emergency-timeline :deep(.el-timeline-item__timestamp) { font-size: 11px; }
+.emergency-timeline b { font-size: 12px; }
+.emergency-timeline p {
+  margin: 3px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--app-text-3);
 }
 
 .gis-detail__foot {

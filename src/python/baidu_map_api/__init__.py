@@ -179,9 +179,11 @@ def plan_driving(origin_lng: float, origin_lat: float,
     后端直接解码路线为 [[lng, lat], ...] 坐标数组返回前端，
     避免前端处理压缩 polyline 字符串。
     """
+    # DirectionLite 的请求点顺序是“纬度,经度”；BMap.Point 与返回的
+    # step.path 则使用“经度,纬度”。这里显式转换，避免路线落到错误地区。
     data = _baidu_get("/directionlite/v1/driving", {
-        "origin": f"{origin_lng},{origin_lat}",
-        "destination": f"{dest_lng},{dest_lat}",
+        "origin": f"{origin_lat},{origin_lng}",
+        "destination": f"{dest_lat},{dest_lng}",
     })
 
     route = (data.get("result") or {}).get("routes") or []
