@@ -67,6 +67,10 @@ def run_chat(message: str, history: Optional[List[Dict[str, str]]] = None) -> Di
         return {"success": False, "error": str(exc), "answer": "",
                 "action": None, "tool_results": tool_results,
                 "model": config.DEEPSEEK_MODEL}
+    except Exception as exc:
+        return {"success": False, "error": "助手内部异常：%s" % exc, "answer": "",
+                "action": None, "tool_results": tool_results,
+                "model": config.DEEPSEEK_MODEL}
 
     return {"success": True, "answer": answer, "action": action,
             "tool_results": tool_results, "model": config.DEEPSEEK_MODEL}
