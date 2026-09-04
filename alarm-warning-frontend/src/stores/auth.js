@@ -21,6 +21,11 @@ export function setSession(payload) {
   sessionStorage.setItem(USER_KEY, JSON.stringify(payload.user))
 }
 
+export function setCurrentUser(user) {
+  authState.user = user
+  sessionStorage.setItem(USER_KEY, JSON.stringify(user))
+}
+
 export function clearSession() {
   authState.token = ''
   authState.user = null

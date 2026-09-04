@@ -15,6 +15,7 @@ import com.utc.alert.kafka.producer.AlertEventProducer;
 import com.utc.alert.service.AlertDedupService;
 import com.utc.alert.service.AlertEngineService;
 import com.utc.alert.service.PriorityCalcService;
+import com.utc.alert.service.NotificationBridgeService;
 import com.utc.alert.service.RootCauseService;
 import com.utc.alert.service.RuleMatchService;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class AlertEngineServiceImpl implements AlertEngineService {
     private final AlertEventProducer alertEventProducer;
     private final AlertEventMapper alertEventMapper;
     private final AlertGroupMapper alertGroupMapper;
+    private final NotificationBridgeService notificationBridgeService;
 
     @Override
     public void processMessage(KafkaMessage message) {
@@ -124,6 +126,8 @@ public class AlertEngineServiceImpl implements AlertEngineService {
             log.info("Alert event created: alertEventCode={}, alertLevel={}, deviceId={}, alertGroupId={}",
                     event.getAlertEventCode(), event.getAlertLevel(),
                     event.getDeviceId(), event.getAlertGroupId());
+
+            notificationBridgeService.enqueue(event);
 
             alertEventProducer.send(event);
         } catch (Exception e) {

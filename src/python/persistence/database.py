@@ -63,13 +63,18 @@ def init_db():
         from . import (
             workorder_tables, plan_tables,       # 已有模块
             risk_analysis_tables, hazmat_tables, tunnel_tables, asset_cost_tables,  # 新增模块
-            auth_tables,
+            auth_tables, notification_tables,
         )
     except ImportError:
         import workorder_tables, plan_tables
         import risk_analysis_tables, hazmat_tables, tunnel_tables, asset_cost_tables
-        import auth_tables
+        import auth_tables, notification_tables
     Base.metadata.create_all(bind=engine)
+    try:
+        from .migrations import run_migrations
+    except ImportError:
+        from migrations import run_migrations
+    run_migrations()
 
 
 def get_db():

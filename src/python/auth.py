@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import time
 from typing import Optional
@@ -20,9 +21,11 @@ from sqlalchemy.orm import Session
 try:
     from persistence import SessionLocal, get_db, init_db
     from persistence.auth_tables import AuthPermission, AuthRole, AuthUser
+    from persistence.notification_tables import NotificationPreference
 except ImportError:
     from src.python.persistence import SessionLocal, get_db, init_db
     from src.python.persistence.auth_tables import AuthPermission, AuthRole, AuthUser
+    from src.python.persistence.notification_tables import NotificationPreference
 
 
 JWT_SECRET = os.environ.get("RBAC_JWT_SECRET", "change-this-rbac-secret-in-production")
@@ -47,12 +50,21 @@ PERMISSIONS = {
     "asset-cost:view": "查看资产成本",
     "work-order:view": "查看工单",
     "work-order:manage": "处理工单",
+    "user:manage": "管理平台用户",
+    "user:contact:manage": "管理用户联系方式",
+    "notification:view": "查看通知记录",
+    "notification:send": "发送告警通知",
+    "notification:retry": "重试失败通知",
+    "notification:config": "管理通知配置",
 }
 
 VIEW_PERMISSIONS = [code for code in PERMISSIONS if code.endswith(":view")]
 ROLE_DEFINITIONS = {
     "admin": ("系统管理员", ["*"]),
-    "operator": ("值班人员", VIEW_PERMISSIONS + ["alert:manage", "work-order:manage"]),
+    "operator": ("值班人员", VIEW_PERMISSIONS + [
+        "alert:manage", "work-order:manage",
+        "notification:view", "notification:send", "notification:retry",
+    ]),
     "viewer": ("只读用户", VIEW_PERMISSIONS),
 }
 
@@ -65,19 +77,41 @@ class ChangePasswordRequest(BaseModel):
     currentPassword: str
     newPassword: str
 
+class ForgotPasswordRequest(BaseModel):
+    username: str
+    contact: str
+    newPassword: str
+
 class CreateUserRequest(BaseModel):
     username: str
     displayName: str
     password: str
     roles: list[str]
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    departmentId: Optional[str] = None
 
 class UpdateUserRequest(BaseModel):
     displayName: str
     roles: list[str]
     enabled: bool
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    departmentId: Optional[str] = None
 
 class ResetPasswordRequest(BaseModel):
     newPassword: str
+
+class UpdateContactRequest(BaseModel):
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    departmentId: Optional[str] = None
+
+class NotificationPreferenceRequest(BaseModel):
+    emailEnabled: bool = True
+    smsEnabled: bool = False
+    minAlertLevel: str = "ORANGE"
+    areaOnly: bool = False
 
 
 def _b64url(data: bytes) -> str:
@@ -156,6 +190,46 @@ def validate_password(password: str) -> None:
     if len(password) < 8 or not any(c.isalpha() for c in password) or not any(c.isdigit() for c in password):
         raise HTTPException(status_code=400, detail="密码至少 8 位，且必须同时包含字母和数字")
 
+def normalize_email(value: Optional[str]) -> Optional[str]:
+    email = (value or "").strip().lower()
+    if not email:
+        return None
+    if len(email) > 128 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise HTTPException(status_code=400, detail="邮箱格式不正确")
+    return email
+
+def normalize_phone(value: Optional[str]) -> Optional[str]:
+    phone = re.sub(r"[\s-]", "", value or "")
+    if not phone:
+        return None
+    if not re.fullmatch(r"(?:\+?86)?1\d{10}", phone):
+        raise HTTPException(status_code=400, detail="手机号格式不正确")
+    return phone[-11:]
+
+def ensure_unique_contact(db: Session, email: Optional[str], phone: Optional[str], exclude_user_id: Optional[int] = None) -> None:
+    if email:
+        query = db.query(AuthUser).filter(AuthUser.email == email)
+        if exclude_user_id is not None:
+            query = query.filter(AuthUser.id != exclude_user_id)
+        if query.first():
+            raise HTTPException(status_code=409, detail="该邮箱已绑定其他账号")
+    if phone:
+        query = db.query(AuthUser).filter(AuthUser.phone == phone)
+        if exclude_user_id is not None:
+            query = query.filter(AuthUser.id != exclude_user_id)
+        if query.first():
+            raise HTTPException(status_code=409, detail="该手机号已绑定其他账号")
+
+def mask_phone(phone: Optional[str]) -> str:
+    return f"{phone[:3]}****{phone[-4:]}" if phone and len(phone) >= 7 else ""
+
+def mask_email(email: Optional[str]) -> str:
+    if not email or "@" not in email:
+        return ""
+    name, domain = email.split("@", 1)
+    visible = name[:2] if len(name) > 2 else name[:1]
+    return f"{visible}***@{domain}"
+
 def resolve_roles(db: Session, codes: list[str]) -> list[AuthRole]:
     normalized = sorted(set(codes))
     roles = db.query(AuthRole).filter(AuthRole.code.in_(normalized)).all() if normalized else []
@@ -212,6 +286,11 @@ def _public_user(user: AuthUser) -> dict:
         "id": user.id,
         "username": user.username,
         "displayName": user.display_name,
+        "email": user.email or "",
+        "phone": user.phone or "",
+        "emailMasked": mask_email(user.email),
+        "phoneMasked": mask_phone(user.phone),
+        "departmentId": user.department_id or "",
         "roles": sorted({role.code for role in user.roles}),
         "permissions": sorted({p.code for role in user.roles for p in role.permissions}),
     }
@@ -233,6 +312,56 @@ def me(claims: dict = Depends(current_user), db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="用户不存在或已停用")
     return _public_user(user)
 
+@router.put("/me/contact", summary="修改自己的联系方式")
+def update_my_contact(request: UpdateContactRequest, claims: dict = Depends(current_user), db: Session = Depends(get_db)):
+    user = db.get(AuthUser, int(claims["sub"]))
+    if not user or not user.enabled:
+        raise HTTPException(status_code=404, detail="用户不存在或已停用")
+    email = normalize_email(request.email)
+    phone = normalize_phone(request.phone)
+    ensure_unique_contact(db, email, phone, user.id)
+    user.email = email
+    user.phone = phone
+    user.department_id = (request.departmentId or "").strip() or None
+    db.commit()
+    db.refresh(user)
+    return _public_user(user)
+
+def _preference_for(db: Session, user_id: int) -> NotificationPreference:
+    preference = db.query(NotificationPreference).filter_by(user_id=user_id).first()
+    if not preference:
+        preference = NotificationPreference(user_id=user_id)
+        db.add(preference)
+        db.commit()
+        db.refresh(preference)
+    return preference
+
+def _public_preference(preference: NotificationPreference) -> dict:
+    return {
+        "emailEnabled": preference.email_enabled,
+        "smsEnabled": preference.sms_enabled,
+        "minAlertLevel": preference.min_alert_level,
+        "areaOnly": preference.area_only,
+    }
+
+@router.get("/me/notification-preference", summary="获取自己的通知偏好")
+def get_my_notification_preference(claims: dict = Depends(current_user), db: Session = Depends(get_db)):
+    return _public_preference(_preference_for(db, int(claims["sub"])))
+
+@router.put("/me/notification-preference", summary="修改自己的通知偏好")
+def update_my_notification_preference(request: NotificationPreferenceRequest, claims: dict = Depends(current_user), db: Session = Depends(get_db)):
+    level = request.minAlertLevel.upper()
+    if level not in {"BLUE", "YELLOW", "ORANGE", "RED"}:
+        raise HTTPException(status_code=400, detail="最低告警等级无效")
+    preference = _preference_for(db, int(claims["sub"]))
+    preference.email_enabled = request.emailEnabled
+    preference.sms_enabled = request.smsEnabled
+    preference.min_alert_level = level
+    preference.area_only = request.areaOnly
+    db.commit()
+    db.refresh(preference)
+    return _public_preference(preference)
+
 @router.post("/change-password", summary="修改自己的密码")
 def change_password(request: ChangePasswordRequest, claims: dict = Depends(current_user), db: Session = Depends(get_db)):
     user = db.get(AuthUser, int(claims["sub"]))
@@ -242,6 +371,31 @@ def change_password(request: ChangePasswordRequest, claims: dict = Depends(curre
     user.password_hash = hash_password(request.newPassword)
     db.commit()
     return {"message": "密码修改成功，请重新登录"}
+
+@router.post("/forgot-password", summary="通过已绑定联系方式重置密码")
+def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """适用于校内实训环境的账号找回流程。
+
+    用户名与已绑定邮箱或手机号必须同时匹配。生产环境应替换为短信/邮件验证码或一次性链接。
+    """
+    username = request.username.strip()
+    raw_contact = request.contact.strip()
+    user = db.query(AuthUser).filter_by(username=username).first()
+    if not user or not user.enabled:
+        raise HTTPException(status_code=400, detail="账号或绑定联系方式不正确")
+
+    matched = False
+    if "@" in raw_contact:
+        matched = bool(user.email and hmac.compare_digest(user.email, normalize_email(raw_contact) or ""))
+    else:
+        matched = bool(user.phone and hmac.compare_digest(user.phone, normalize_phone(raw_contact) or ""))
+    if not matched:
+        raise HTTPException(status_code=400, detail="账号或绑定联系方式不正确")
+
+    validate_password(request.newPassword)
+    user.password_hash = hash_password(request.newPassword)
+    db.commit()
+    return {"message": "密码重置成功，请使用新密码登录"}
 
 @router.get("/roles", summary="角色清单")
 def list_roles(_: dict = Depends(require_admin), db: Session = Depends(get_db)):
@@ -257,7 +411,11 @@ def create_user(request: CreateUserRequest, _: dict = Depends(require_admin), db
     if not username or db.query(AuthUser).filter_by(username=username).first():
         raise HTTPException(status_code=409, detail="用户名为空或已存在")
     validate_password(request.password)
+    email = normalize_email(request.email)
+    phone = normalize_phone(request.phone)
+    ensure_unique_contact(db, email, phone)
     user = AuthUser(username=username, display_name=request.displayName.strip() or username,
+                    email=email, phone=phone, department_id=(request.departmentId or "").strip() or None,
                     password_hash=hash_password(request.password), enabled=True, roles=resolve_roles(db, request.roles))
     db.add(user); db.commit(); db.refresh(user)
     return _public_user(user) | {"enabled": user.enabled}
@@ -268,9 +426,30 @@ def update_user(user_id: int, request: UpdateUserRequest, claims: dict = Depends
     if not user: raise HTTPException(status_code=404, detail="用户不存在")
     if user.id == int(claims["sub"]) and not request.enabled: raise HTTPException(status_code=400, detail="不能停用当前登录账号")
     user.display_name = request.displayName.strip() or user.username
+    email = normalize_email(request.email)
+    phone = normalize_phone(request.phone)
+    ensure_unique_contact(db, email, phone, user.id)
+    user.email = email
+    user.phone = phone
+    user.department_id = (request.departmentId or "").strip() or None
     user.enabled = request.enabled
     user.roles = resolve_roles(db, request.roles)
     db.commit()
+    return _public_user(user) | {"enabled": user.enabled}
+
+@router.put("/users/{user_id}/contact", summary="管理员维护用户联系方式")
+def update_user_contact(user_id: int, request: UpdateContactRequest, _: dict = Depends(require_admin), db: Session = Depends(get_db)):
+    user = db.get(AuthUser, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    email = normalize_email(request.email)
+    phone = normalize_phone(request.phone)
+    ensure_unique_contact(db, email, phone, user.id)
+    user.email = email
+    user.phone = phone
+    user.department_id = (request.departmentId or "").strip() or None
+    db.commit()
+    db.refresh(user)
     return _public_user(user) | {"enabled": user.enabled}
 
 @router.put("/users/{user_id}/password", summary="管理员重置密码")

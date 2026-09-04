@@ -46,7 +46,7 @@ import { can } from '@/stores/auth'
 import {
   Odometer, Location, Bell, TrendCharts, DataAnalysis,
   Aim, Box, Grid, MapLocation, AlarmClock,
-  OfficeBuilding, Coin, Tickets, User,
+  OfficeBuilding, Coin, Tickets, User, Message,
   Fold, Expand, SetUp, Monitor
 } from '@element-plus/icons-vue'
 
@@ -65,21 +65,22 @@ const expandIcon = Expand
 // 监控大屏 / 综合态势 / AI预警中心 / 故障预测中心 / 风险研判中心 / 燃气风控 / 危化品监管 /
 // 综合管廊 / 道路塌陷 / 应急预案 / 资产管理 / 资产成本 / 工单管理
 const menus = [
-  { path: '/',                   title: '监控大屏',     icon: Odometer },
-  { path: '/gis',                title: '综合态势',     icon: Location },
-  { path: '/alerts',             title: 'AI预警中心',   icon: Bell },
-  { path: '/failure-prediction', title: '故障预测中心', icon: TrendCharts },
-  { path: '/risk-analysis',      title: '风险研判中心', icon: DataAnalysis },
-  { path: '/gas-risk',           title: '燃气风控',     icon: Aim },
-  { path: '/hazmat',             title: '危化品监管',   icon: Box },
-  { path: '/utility-tunnel',     title: '综合管廊',     icon: Grid },
-  { path: '/road-hazard',        title: '道路塌陷',     icon: MapLocation },
-  { path: '/emergency-plan',     title: '应急预案',     icon: AlarmClock },
-  { path: '/asset',              title: '资产管理',     icon: OfficeBuilding },
-  { path: '/asset-cost',         title: '资产成本',     icon: Coin },
-  { path: '/work-order',         title: '工单管理',     icon: Tickets },
-  { path: '/manhole-cover',      title: '井盖管控',     icon: SetUp },
-  { path: '/water-supply',       title: '供水管控',     icon: Monitor },
+  { path: '/',                   title: '监控大屏',     icon: Odometer, permission: 'dashboard:view' },
+  { path: '/gis',                title: '综合态势',     icon: Location, permission: 'gis:view' },
+  { path: '/alerts',             title: 'AI预警中心',   icon: Bell, permission: 'alert:view' },
+  { path: '/notifications',      title: '通知记录',     icon: Message, permission: 'notification:view' },
+  { path: '/failure-prediction', title: '故障预测中心', icon: TrendCharts, permission: 'failure:view' },
+  { path: '/risk-analysis',      title: '风险研判中心', icon: DataAnalysis, permission: 'risk:view' },
+  { path: '/gas-risk',           title: '燃气风控',     icon: Aim, permission: 'gas-risk:view' },
+  { path: '/hazmat',             title: '危化品监管',   icon: Box, permission: 'hazmat:view' },
+  { path: '/utility-tunnel',     title: '综合管廊',     icon: Grid, permission: 'tunnel:view' },
+  { path: '/road-hazard',        title: '道路塌陷',     icon: MapLocation, permission: 'road-hazard:view' },
+  { path: '/emergency-plan',     title: '应急预案',     icon: AlarmClock, permission: 'plan:view' },
+  { path: '/asset',              title: '资产管理',     icon: OfficeBuilding, permission: 'asset:view' },
+  { path: '/asset-cost',         title: '资产成本',     icon: Coin, permission: 'asset-cost:view' },
+  { path: '/work-order',         title: '工单管理',     icon: Tickets, permission: 'work-order:view' },
+  { path: '/manhole-cover',      title: '井盖管控',     icon: SetUp, permission: 'tunnel:view' },
+  { path: '/water-supply',       title: '供水管控',     icon: Monitor, permission: 'tunnel:view' },
   { path: '/users',              title: '用户管理',     icon: User, permission: 'user:manage' }
 ]
 

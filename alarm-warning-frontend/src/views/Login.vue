@@ -14,10 +14,34 @@
           <el-input v-model="form.password" size="large" type="password" show-password autocomplete="current-password"
                     placeholder="请输入密码" @keyup.enter="submit" />
         </el-form-item>
+        <div class="login-actions">
+          <el-button link type="primary" @click="openForgotPassword">忘记密码？</el-button>
+        </div>
         <el-button class="login-button" type="primary" size="large" :loading="loading" @click="submit">登录</el-button>
       </el-form>
-      <p class="login-hint">演示账号：admin / Admin@123</p>
     </section>
+
+    <el-dialog v-model="forgotVisible" title="重置密码" width="420px" append-to-body destroy-on-close>
+      <el-alert title="请输入账号及该账号已绑定的邮箱或手机号" type="info" :closable="false" show-icon />
+      <el-form ref="forgotFormRef" :model="forgotForm" :rules="forgotRules" label-position="top" class="forgot-form">
+        <el-form-item label="用户名" prop="username">
+          <el-input v-model.trim="forgotForm.username" autocomplete="username" placeholder="请输入用户名" />
+        </el-form-item>
+        <el-form-item label="绑定邮箱或手机号" prop="contact">
+          <el-input v-model.trim="forgotForm.contact" placeholder="请输入已绑定的邮箱或手机号" />
+        </el-form-item>
+        <el-form-item label="新密码" prop="newPassword">
+          <el-input v-model="forgotForm.newPassword" type="password" show-password autocomplete="new-password" placeholder="至少 8 位，包含字母和数字" />
+        </el-form-item>
+        <el-form-item label="确认新密码" prop="confirmPassword">
+          <el-input v-model="forgotForm.confirmPassword" type="password" show-password autocomplete="new-password" placeholder="请再次输入新密码" @keyup.enter="resetPassword" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="forgotVisible = false">取消</el-button>
+        <el-button type="primary" :loading="resetting" @click="resetPassword">确认重置</el-button>
+      </template>
+    </el-dialog>
   </main>
 </template>
 
@@ -26,17 +50,58 @@ import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Odometer } from '@element-plus/icons-vue'
-import { login } from '@/api/auth'
+import { forgotPassword, login } from '@/api/auth'
 import { setSession } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
 const formRef = ref()
 const loading = ref(false)
+const resetting = ref(false)
+const forgotVisible = ref(false)
+const forgotFormRef = ref()
 const form = reactive({ username: '', password: '' })
+const forgotForm = reactive({ username: '', contact: '', newPassword: '', confirmPassword: '' })
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+}
+const forgotRules = {
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  contact: [{ required: true, message: '请输入已绑定的邮箱或手机号', trigger: 'blur' }],
+  newPassword: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { pattern: /^(?=.*[A-Za-z])(?=.*\d).{8,}$/, message: '密码至少 8 位，且必须包含字母和数字', trigger: 'blur' }
+  ],
+  confirmPassword: [{
+    validator: (_rule, value, callback) => value === forgotForm.newPassword ? callback() : callback(new Error('两次输入的密码不一致')),
+    trigger: 'blur'
+  }]
+}
+
+function openForgotPassword() {
+  Object.assign(forgotForm, { username: form.username, contact: '', newPassword: '', confirmPassword: '' })
+  forgotVisible.value = true
+}
+
+async function resetPassword() {
+  if (resetting.value || !(await forgotFormRef.value?.validate().catch(() => false))) return
+  resetting.value = true
+  try {
+    const result = await forgotPassword({
+      username: forgotForm.username,
+      contact: forgotForm.contact,
+      newPassword: forgotForm.newPassword
+    })
+    forgotVisible.value = false
+    form.username = forgotForm.username
+    form.password = ''
+    ElMessage.success(result.message || '密码重置成功，请使用新密码登录')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || error.message || '密码重置失败，请重试')
+  } finally {
+    resetting.value = false
+  }
 }
 
 async function submit() {
@@ -68,7 +133,8 @@ async function submit() {
 h1 { margin: 0; color: #1d1d1f; font-size: 28px; letter-spacing: -.03em; }
 .login-subtitle { margin: 10px 0 30px; color: #6e6e73; }
 .login-button { width: 100%; margin-top: 8px; font-weight: 600; }
-.login-hint { margin: 22px 0 0; color: #86868b; font-size: 12px; text-align: center; }
+.login-actions { display: flex; justify-content: flex-end; margin-top: -12px; }
+.forgot-form { margin-top: 18px; }
 @media (max-width: 520px) { .login-card { padding: 30px 24px; } }
 </style>
 

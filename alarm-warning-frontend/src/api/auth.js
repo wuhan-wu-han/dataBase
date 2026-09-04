@@ -11,6 +11,11 @@ export async function login(credentials) {
   return data
 }
 
+export async function forgotPassword(body) {
+  const { data } = await authHttp.post('/forgot-password', body)
+  return data
+}
+
 export async function getCurrentUser(token) {
   const { data } = await authHttp.get('/me', { headers: { Authorization: `Bearer ${token}` } })
   return data
@@ -27,3 +32,7 @@ export const getRoles = async () => (await authHttp.get('/roles', { headers: aut
 export const createUser = async (body) => (await authHttp.post('/users', body, { headers: authHeaders() })).data
 export const updateUser = async (id, body) => (await authHttp.put(`/users/${id}`, body, { headers: authHeaders() })).data
 export const resetUserPassword = async (id, newPassword) => (await authHttp.put(`/users/${id}/password`, { newPassword }, { headers: authHeaders() })).data
+export const updateMyContact = async (body) => (await authHttp.put('/me/contact', body, { headers: authHeaders() })).data
+export const getNotificationPreference = async () => (await authHttp.get('/me/notification-preference', { headers: authHeaders() })).data
+export const updateNotificationPreference = async (body) => (await authHttp.put('/me/notification-preference', body, { headers: authHeaders() })).data
+export const updateUserContact = async (id, body) => (await authHttp.put(`/users/${id}/contact`, body, { headers: authHeaders() })).data

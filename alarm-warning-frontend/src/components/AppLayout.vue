@@ -45,6 +45,7 @@
           <el-dropdown @command="handleUserCommand">
             <div class="topbar-avatar"><span>{{ (authState.user?.displayName || '用').slice(0,1) }}</span></div>
             <template #dropdown><el-dropdown-menu>
+              <el-dropdown-item command="profile">个人中心</el-dropdown-item>
               <el-dropdown-item command="password">修改密码</el-dropdown-item>
               <el-dropdown-item v-if="can('user:manage')" command="users">用户管理</el-dropdown-item>
               <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
@@ -99,6 +100,7 @@ const router = useRouter()
 const passwordVisible = ref(false), passwordSaving = ref(false)
 const passwordForm = reactive({ currentPassword: '', newPassword: '' })
 function handleUserCommand(command) {
+  if (command === 'profile') router.push('/profile')
   if (command === 'password') passwordVisible.value = true
   if (command === 'users') router.push('/users')
   if (command === 'logout') { clearSession(); router.replace('/login') }

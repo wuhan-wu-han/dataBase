@@ -50,6 +50,11 @@ try:
 except ImportError:
     from src.python.auth import router as auth_router, seed_rbac
 
+try:
+    from notification import router as notification_router, start_notification_worker
+except ImportError:
+    from src.python.notification import router as notification_router, start_notification_worker
+
 # 创建FastAPI应用实例
 app = FastAPI(
     title="智能制造工业设备监控平台",
@@ -84,6 +89,8 @@ app.mount("/output", StaticFiles(directory=output_dir), name="output")
 
 seed_rbac()
 app.include_router(auth_router)
+app.include_router(notification_router)
+start_notification_worker()
 
 # 注册数据治理与中台服务子模块路由
 try:
