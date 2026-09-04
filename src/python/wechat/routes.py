@@ -6,16 +6,20 @@
 配置：
   在 .env 中设置 WECHAT_TOKEN（与微信公众平台/测试号后台填的 Token 一致）
 """
+import asyncio
 import hashlib
 import time
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List
 
 from fastapi import Request
 from fastapi.responses import PlainTextResponse
 
 from assistant.service import run_chat
+
+_executor = ThreadPoolExecutor(max_workers=4)
 
 # 每个用户保留最近对话（内存，重启清空，够用）
 _sessions: Dict[str, List[Dict[str, str]]] = OrderedDict()
@@ -61,8 +65,17 @@ def _evict(d: OrderedDict, max_size: int):
 async def wechat_verify(request: Request) -> PlainTextResponse:
     """GET /wechat — 微信服务器 URL 验证"""
     p = request.query_params
-    if _check_sig(p.get("signature", ""), p.get("timestamp", ""), p.get("nonce", "")):
-        return PlainTextResponse(p.get("echostr", ""))
+    sig = p.get("signature", "")
+    ts = p.get("timestamp", "")
+    nonce = p.get("nonce", "")
+    echostr = p.get("echostr", "")
+    tok = _token()
+    tmp = sorted([tok, ts, nonce])
+    computed = hashlib.sha1("".join(tmp).encode()).hexdigest()
+    print(f"[wechat-verify] token={tok!r} ts={ts} nonce={nonce}")
+    print(f"[wechat-verify] sorted={tmp} computed={computed} expected={sig} match={computed==sig}")
+    if computed == sig:
+        return PlainTextResponse(echostr)
     return PlainTextResponse("forbidden", status_code=403)
 
 
@@ -83,7 +96,7 @@ async def wechat_message(request: Request) -> PlainTextResponse:
     # 非文本消息
     if msg_type != "text" or not content:
         reply = "你好！我是安塞区城市安全生命线管网AI智慧平台助手，请直接输入问题，例如：\n- 当前有多少工单？\n- 管廊告警情况\n- 打开应急预案"
-        return PlainTextResponse(_text_reply(to_user, from_user, reply), media_type="application/xml")
+        return PlainTextResponse(_text_reply(from_user, to_user, reply), media_type="application/xml")
 
     # 去重：微信 5 秒超时重试
     if msg_id and msg_id in _seen_msg_ids:
@@ -95,12 +108,24 @@ async def wechat_message(request: Request) -> PlainTextResponse:
     # 获取/创建用户对话历史
     history = _sessions.setdefault(from_user, [])
 
-    # 调用助手
-    result = run_chat(content, history)
-    answer = result.get("answer", "")
-
-    if not result.get("success"):
-        answer = "抱歉，助手暂时出现问题，请稍后重试。"
+    # 调用助手（线程池 + 4秒超时，微信要求5秒内响应）
+    t0 = time.time()
+    print(f"[wechat-msg] user={from_user} content={content!r}")
+    loop = asyncio.get_event_loop()
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(_executor, run_chat, content, history),
+            timeout=8.0
+        )
+        elapsed = time.time() - t0
+        answer = result.get("answer", "")
+        print(f"[wechat-msg] done in {elapsed:.1f}s success={result.get('success')} answer_len={len(answer)}")
+        if not result.get("success"):
+            answer = "抱歉，助手暂时出现问题，请稍后重试。"
+    except asyncio.TimeoutError:
+        elapsed = time.time() - t0
+        print(f"[wechat-msg] TIMEOUT after {elapsed:.1f}s (limit 8s)")
+        answer = "查询耗时较长，请稍后再发一次相同问题。"
 
     # 追加到历史
     history.append({"role": "user", "content": content})
@@ -109,4 +134,6 @@ async def wechat_message(request: Request) -> PlainTextResponse:
         _sessions[from_user] = history[-20:]
     _evict(_sessions, _MAX_SESSIONS)
 
-    return PlainTextResponse(_text_reply(to_user, from_user, answer), media_type="application/xml")
+    xml_reply = _text_reply(from_user, to_user, answer)
+    print(f"[wechat-msg] reply_xml_len={len(xml_reply)}")
+    return PlainTextResponse(xml_reply, media_type="application/xml")
