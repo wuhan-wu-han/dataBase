@@ -14,6 +14,11 @@ if (-not $env:RBAC_JWT_SECRET) {
     Write-Warning 'Using the development RBAC_JWT_SECRET. Set a strong random secret in production.'
 }
 
+# 企业实训默认使用本地短信记录器；如需真实邮件，请在启动前配置 SMTP_* 环境变量。
+if (-not $env:NOTIFICATION_SMS_DEMO_MODE) { $env:NOTIFICATION_SMS_DEMO_MODE = 'true' }
+if (-not $env:NOTIFICATION_AUTO_ENABLED) { $env:NOTIFICATION_AUTO_ENABLED = 'true' }
+if (-not $env:PLATFORM_API_URL) { $env:PLATFORM_API_URL = 'http://127.0.0.1:8000' }
+
 function Assert-Command([string]$Name) {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "Required command not found: $Name"
@@ -90,6 +95,8 @@ Start-ManagedProcess 'platform' 8000 'python' @('-m','uvicorn','main:app','--hos
 Start-ManagedProcess 'gas-asset' 8001 'python' @('main.py') (Join-Path $projectRoot 'gas_asset_manage')
 Start-ManagedProcess 'road-hazard' 8002 'python' @('main.py') (Join-Path $projectRoot 'road_hazard_control')
 Start-ManagedProcess 'gas-risk' 8003 'python' @('main.py') (Join-Path $projectRoot 'gas_risk_control')
+Start-ManagedProcess 'water-supply' 8004 'python' @('main.py') (Join-Path $projectRoot 'water_supply_control')
+Start-ManagedProcess 'manhole-cover' 8005 'python' @('main.py') (Join-Path $projectRoot 'manhole_cover_control')
 Start-ManagedProcess 'alarm-warning' 8085 'java' @('-jar', $alarmJar) (Join-Path $projectRoot 'alarm-warning-service')
 Start-ManagedProcess 'api-gateway' 8080 'java' @('-jar', $gatewayJar) (Join-Path $projectRoot 'api-gateway')
 Start-ManagedProcess 'frontend' 5173 'npm.cmd' @('run','dev','--','--host','0.0.0.0') (Join-Path $projectRoot 'alarm-warning-frontend')
@@ -115,5 +122,6 @@ if (-not $loginOk) {
 Write-Host ''
 Write-Host 'Full service is ready: http://localhost:5173/login' -ForegroundColor Green
 Write-Host 'Default administrator: admin / Admin@123'
+Write-Host 'Services: platform 8000, assets 8001, road 8002, gas 8003, water 8004, manhole 8005, gateway 8080, alert 8085'
 Write-Host 'Stop: powershell -ExecutionPolicy Bypass -File scripts/stop_full_service.ps1'
 

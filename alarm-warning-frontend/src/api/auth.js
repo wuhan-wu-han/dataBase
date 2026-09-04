@@ -11,6 +11,11 @@ export async function login(credentials) {
   return data
 }
 
+export async function register(body) {
+  const { data } = await authHttp.post('/register', body)
+  return data
+}
+
 export async function forgotPassword(body) {
   const { data } = await authHttp.post('/forgot-password', body)
   return data

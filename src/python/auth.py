@@ -73,6 +73,14 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+class RegisterRequest(BaseModel):
+    username: str
+    displayName: str
+    password: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    departmentId: Optional[str] = None
+
 class ChangePasswordRequest(BaseModel):
     currentPassword: str
     newPassword: str
@@ -303,6 +311,41 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     return {"accessToken": issue_token(user), "tokenType": "Bearer", "expiresIn": JWT_TTL_SECONDS,
             "user": _public_user(user)}
+
+@router.post("/register", summary="注册平台账号")
+def register(request: RegisterRequest, db: Session = Depends(get_db)):
+    username = request.username.strip()
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{3,31}", username):
+        raise HTTPException(status_code=400, detail="用户名须为 4-32 位，并以字母开头")
+    if db.query(AuthUser).filter_by(username=username).first():
+        raise HTTPException(status_code=409, detail="用户名已存在")
+
+    display_name = request.displayName.strip()
+    if not display_name or len(display_name) > 64:
+        raise HTTPException(status_code=400, detail="姓名不能为空且不能超过 64 个字符")
+    validate_password(request.password)
+    email = normalize_email(request.email)
+    phone = normalize_phone(request.phone)
+    if not email and not phone:
+        raise HTTPException(status_code=400, detail="请至少绑定一个邮箱或手机号")
+    ensure_unique_contact(db, email, phone)
+
+    viewer_role = db.query(AuthRole).filter_by(code="viewer").first()
+    if not viewer_role:
+        raise HTTPException(status_code=503, detail="系统角色尚未初始化，请稍后重试")
+    user = AuthUser(
+        username=username,
+        display_name=display_name,
+        password_hash=hash_password(request.password),
+        email=email,
+        phone=phone,
+        department_id=(request.departmentId or "").strip() or None,
+        enabled=True,
+        roles=[viewer_role],
+    )
+    db.add(user)
+    db.commit()
+    return {"message": "注册成功，请登录", "username": user.username}
 
 
 @router.get("/me", summary="获取当前用户")

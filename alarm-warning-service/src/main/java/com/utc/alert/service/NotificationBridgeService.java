@@ -51,7 +51,7 @@ public class NotificationBridgeService {
         payload.put("eventTimestamp", event.getEventTimestamp());
         try {
             client.post()
-                    .uri("/api/platform/notifications/dispatch-alert")
+                    .uri("/notifications/dispatch-alert")
                     .header("X-Notification-Internal-Token", internalToken)
                     .body(payload)
                     .retrieve()

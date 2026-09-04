@@ -14,6 +14,23 @@ from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+
+def _load_notification_env() -> None:
+    """加载本模块旁的 .env；系统环境变量优先，不覆盖部署配置。"""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.isfile(env_path):
+        return
+    with open(env_path, "r", encoding="utf-8") as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_notification_env()
+
 try:
     from auth import current_user, has_permission, mask_email, mask_phone
     from persistence import SessionLocal, get_db
@@ -26,7 +43,9 @@ except ImportError:
     from src.python.persistence.notification_tables import NotificationPreference, NotificationTask
 
 
-router = APIRouter(prefix="/api/platform/notifications", tags=["告警通知"])
+# 外部统一地址为 /api/platform/notifications/**；Vite 与 Java 网关会剥离
+# /api/platform 前缀，因此平台服务内部注册为 /notifications/**。
+router = APIRouter(prefix="/notifications", tags=["告警通知"])
 
 LEVEL_RANK = {"BLUE": 1, "YELLOW": 2, "ORANGE": 3, "RED": 4}
 VALID_CHANNELS = {"EMAIL", "SMS"}
@@ -56,6 +75,15 @@ class NotificationAlertRequest(BaseModel):
     metricValue: Optional[str] = None
     thresholdValue: Optional[str] = None
     eventTimestamp: Optional[int] = None
+
+
+class ConfiguredEmailRequest(BaseModel):
+    alertId: str
+    subject: str
+    content: str
+    alertLevel: Optional[str] = None
+    businessType: Optional[str] = None
+    areaId: Optional[str] = None
 
 
 def require_permission(permission: str):
@@ -103,10 +131,11 @@ def _task_dict(task: NotificationTask) -> dict:
 
 class EmailSender:
     def send(self, task: NotificationTask) -> str:
-        if os.environ.get("NOTIFICATION_EMAIL_ENABLED", "true").lower() != "true":
+        enabled = os.environ.get("ALERT_MAIL_ENABLED", os.environ.get("NOTIFICATION_EMAIL_ENABLED", "true"))
+        if enabled.lower() != "true":
             raise RuntimeError("邮件通知通道未启用")
         host = os.environ.get("SMTP_HOST", "").strip()
-        username = os.environ.get("SMTP_USERNAME", "").strip()
+        username = os.environ.get("SMTP_USER", os.environ.get("SMTP_USERNAME", "")).strip()
         password = os.environ.get("SMTP_PASSWORD", "")
         if not host or not username or not password:
             raise RuntimeError("SMTP 配置不完整")
@@ -238,6 +267,47 @@ def send_notification(request: NotificationSendRequest, _: dict = Depends(requir
     for task in tasks:
         _send_task(db, task)
     return {"created": len(tasks), "skipped": skipped, "items": [_task_dict(task) for task in tasks]}
+
+
+@router.post("/send-configured-email", summary="发送告警到系统配置邮箱")
+def send_configured_email(
+    request: ConfiguredEmailRequest,
+    claims: dict = Depends(require_permission("notification:send")),
+    db: Session = Depends(get_db),
+):
+    recipient = os.environ.get("ALERT_MAIL_TO", "").strip()
+    if not recipient:
+        raise HTTPException(status_code=503, detail="系统未配置告警收件邮箱")
+    if not request.alertId.strip() or not request.subject.strip() or not request.content.strip():
+        raise HTTPException(status_code=400, detail="告警编号、标题和内容不能为空")
+    user = db.get(AuthUser, int(claims["sub"]))
+    if not user:
+        raise HTTPException(status_code=401, detail="当前用户不存在")
+    existing = db.query(NotificationTask).filter_by(
+        alert_id=request.alertId.strip(), user_id=user.id, channel="EMAIL"
+    ).first()
+    if existing:
+        if existing.status != "SUCCESS":
+            _send_task(db, existing)
+        return {"created": 0, "items": [_task_dict(existing)]}
+    task = NotificationTask(
+        alert_id=request.alertId.strip(),
+        user_id=user.id,
+        channel="EMAIL",
+        recipient=recipient,
+        recipient_name="系统告警邮箱",
+        subject=request.subject.strip()[:200],
+        content=request.content.strip(),
+        alert_level=(request.alertLevel or "").upper() or None,
+        business_type=request.businessType,
+        area_id=request.areaId,
+        status="PENDING",
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    _send_task(db, task)
+    return {"created": 1, "items": [_task_dict(task)]}
 
 
 @router.get("", summary="查询通知记录")
