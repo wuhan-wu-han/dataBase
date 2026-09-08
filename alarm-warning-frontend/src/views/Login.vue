@@ -31,6 +31,14 @@
         <el-form-item label="绑定邮箱或手机号" prop="contact">
           <el-input v-model.trim="forgotForm.contact" placeholder="请输入已绑定的邮箱或手机号" />
         </el-form-item>
+        <el-form-item label="验证码" prop="code">
+          <div class="code-input">
+            <el-input v-model.trim="forgotForm.code" maxlength="6" placeholder="6 位验证码" />
+            <el-button :loading="forgotSending" :disabled="forgotCountdown > 0" @click="sendForgotCode">
+              {{ forgotCountdown ? `${forgotCountdown}s` : '获取验证码' }}
+            </el-button>
+          </div>
+        </el-form-item>
         <el-form-item label="新密码" prop="newPassword">
           <el-input v-model="forgotForm.newPassword" type="password" show-password autocomplete="new-password" placeholder="至少 8 位，包含字母和数字" />
         </el-form-item>
@@ -55,13 +63,21 @@
             <el-input v-model.trim="registerForm.displayName" placeholder="请输入姓名" />
           </el-form-item>
           <el-form-item label="电子邮箱" prop="email">
-            <el-input v-model.trim="registerForm.email" autocomplete="email" placeholder="邮箱或手机号至少填写一个" />
+            <el-input v-model.trim="registerForm.email" autocomplete="email" placeholder="请输入用于验证的邮箱" />
           </el-form-item>
           <el-form-item label="手机号" prop="phone">
             <el-input v-model.trim="registerForm.phone" autocomplete="tel" placeholder="中国大陆手机号" />
           </el-form-item>
           <el-form-item label="负责部门/区域" class="full-row">
             <el-input v-model.trim="registerForm.departmentId" placeholder="选填" />
+          </el-form-item>
+          <el-form-item label="邮箱验证码" prop="code" class="full-row">
+            <div class="code-input">
+              <el-input v-model.trim="registerForm.code" maxlength="6" placeholder="6 位验证码" />
+              <el-button :loading="registerSending" :disabled="registerCountdown > 0" @click="sendRegisterCode">
+                {{ registerCountdown ? `${registerCountdown}s` : '获取验证码' }}
+              </el-button>
+            </div>
           </el-form-item>
           <el-form-item label="密码" prop="password">
             <el-input v-model="registerForm.password" type="password" show-password autocomplete="new-password" placeholder="至少 8 位，包含字母和数字" />
@@ -84,7 +100,7 @@ import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Odometer } from '@element-plus/icons-vue'
-import { forgotPassword, login, register } from '@/api/auth'
+import { forgotPassword, login, register, sendVerificationCode, verifyVerificationCode } from '@/api/auth'
 import { setSession } from '@/stores/auth'
 
 const router = useRouter()
@@ -97,9 +113,13 @@ const forgotFormRef = ref()
 const registerVisible = ref(false)
 const registering = ref(false)
 const registerFormRef = ref()
+const forgotSending = ref(false)
+const registerSending = ref(false)
+const forgotCountdown = ref(0)
+const registerCountdown = ref(0)
 const form = reactive({ username: '', password: '' })
-const forgotForm = reactive({ username: '', contact: '', newPassword: '', confirmPassword: '' })
-const registerForm = reactive({ username: '', displayName: '', email: '', phone: '', departmentId: '', password: '', confirmPassword: '' })
+const forgotForm = reactive({ username: '', contact: '', code: '', newPassword: '', confirmPassword: '' })
+const registerForm = reactive({ username: '', displayName: '', email: '', phone: '', departmentId: '', code: '', password: '', confirmPassword: '' })
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
@@ -107,6 +127,7 @@ const rules = {
 const forgotRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   contact: [{ required: true, message: '请输入已绑定的邮箱或手机号', trigger: 'blur' }],
+  code: [{ required: true, pattern: /^\d{6}$/, message: '请输入 6 位验证码', trigger: 'blur' }],
   newPassword: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
     { pattern: /^(?=.*[A-Za-z])(?=.*\d).{8,}$/, message: '密码至少 8 位，且必须包含字母和数字', trigger: 'blur' }
@@ -123,6 +144,7 @@ const registerRules = {
   ],
   displayName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   email: [{ type: 'email', message: '邮箱格式不正确', trigger: 'blur' }],
+  code: [{ required: true, pattern: /^\d{6}$/, message: '请输入 6 位邮箱验证码', trigger: 'blur' }],
   phone: [{ pattern: /^(?:\+?86)?1\d{10}$|^$/, message: '手机号格式不正确', trigger: 'blur' }],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
@@ -135,25 +157,29 @@ const registerRules = {
 }
 
 function openRegister() {
-  Object.assign(registerForm, { username: form.username, displayName: '', email: '', phone: '', departmentId: '', password: '', confirmPassword: '' })
+  Object.assign(registerForm, { username: form.username, displayName: '', email: '', phone: '', departmentId: '', code: '', password: '', confirmPassword: '' })
   registerVisible.value = true
 }
 
 async function submitRegister() {
   if (registering.value || !(await registerFormRef.value?.validate().catch(() => false))) return
-  if (!registerForm.email && !registerForm.phone) {
-    ElMessage.warning('请至少填写一个邮箱或手机号')
+  if (!registerForm.email) {
+    ElMessage.warning('注册必须填写并验证电子邮箱')
     return
   }
   registering.value = true
   try {
+    const verified = await verifyVerificationCode({
+      scene: 'register', channel: 'email', target: registerForm.email, code: registerForm.code
+    })
     const result = await register({
       username: registerForm.username,
       displayName: registerForm.displayName,
       email: registerForm.email,
       phone: registerForm.phone,
       departmentId: registerForm.departmentId,
-      password: registerForm.password
+      password: registerForm.password,
+      verificationToken: verified.verificationToken
     })
     registerVisible.value = false
     form.username = result.username || registerForm.username
@@ -167,7 +193,7 @@ async function submitRegister() {
 }
 
 function openForgotPassword() {
-  Object.assign(forgotForm, { username: form.username, contact: '', newPassword: '', confirmPassword: '' })
+  Object.assign(forgotForm, { username: form.username, contact: '', code: '', newPassword: '', confirmPassword: '' })
   forgotVisible.value = true
 }
 
@@ -175,10 +201,15 @@ async function resetPassword() {
   if (resetting.value || !(await forgotFormRef.value?.validate().catch(() => false))) return
   resetting.value = true
   try {
+    const channel = forgotForm.contact.includes('@') ? 'email' : 'sms'
+    const verified = await verifyVerificationCode({
+      scene: 'forgot_password', channel, target: forgotForm.contact,
+      username: forgotForm.username, code: forgotForm.code
+    })
     const result = await forgotPassword({
       username: forgotForm.username,
-      contact: forgotForm.contact,
-      newPassword: forgotForm.newPassword
+      newPassword: forgotForm.newPassword,
+      resetToken: verified.verificationToken
     })
     forgotVisible.value = false
     form.username = forgotForm.username
@@ -189,6 +220,41 @@ async function resetPassword() {
   } finally {
     resetting.value = false
   }
+}
+
+function runCountdown(state) {
+  state.value = 60
+  const timer = window.setInterval(() => {
+    state.value -= 1
+    if (state.value <= 0) window.clearInterval(timer)
+  }, 1000)
+}
+
+async function sendRegisterCode() {
+  if (!registerForm.email) return ElMessage.warning('请先填写电子邮箱')
+  registerSending.value = true
+  try {
+    await sendVerificationCode({ scene: 'register', channel: 'email', target: registerForm.email })
+    runCountdown(registerCountdown)
+    ElMessage.success('验证码已发送，请检查邮箱')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '验证码发送失败')
+  } finally { registerSending.value = false }
+}
+
+async function sendForgotCode() {
+  if (!forgotForm.username || !forgotForm.contact) return ElMessage.warning('请先填写用户名和绑定联系方式')
+  forgotSending.value = true
+  try {
+    await sendVerificationCode({
+      scene: 'forgot_password', channel: forgotForm.contact.includes('@') ? 'email' : 'sms',
+      target: forgotForm.contact, username: forgotForm.username
+    })
+    runCountdown(forgotCountdown)
+    ElMessage.success('如果账号信息匹配，验证码已发送')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || '验证码发送失败')
+  } finally { forgotSending.value = false }
 }
 
 async function submit() {
@@ -224,6 +290,7 @@ h1 { margin: 0; color: #1d1d1f; font-size: 28px; letter-spacing: -.03em; }
 .forgot-form { margin-top: 18px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 .full-row { grid-column: 1 / -1; }
+.code-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; width: 100%; }
 @media (max-width: 520px) { .login-card { padding: 30px 24px; } }
 @media (max-width: 520px) { .form-grid { grid-template-columns: 1fr; } .full-row { grid-column: auto; } }
 </style>

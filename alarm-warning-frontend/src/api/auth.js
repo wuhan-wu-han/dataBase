@@ -21,6 +21,16 @@ export async function forgotPassword(body) {
   return data
 }
 
+export async function sendVerificationCode(body) {
+  const { data } = await authHttp.post('/verification/send', body)
+  return data
+}
+
+export async function verifyVerificationCode(body) {
+  const { data } = await authHttp.post('/verification/verify', body)
+  return data
+}
+
 export async function getCurrentUser(token) {
   const { data } = await authHttp.get('/me', { headers: { Authorization: `Bearer ${token}` } })
   return data

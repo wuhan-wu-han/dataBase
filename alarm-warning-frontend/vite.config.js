@@ -7,6 +7,7 @@ export default defineConfig({
 
   server: {
     host: '0.0.0.0',
+    allowedHosts: ['unlined-dynamite-unbaked.ngrok-free.dev'],
     port: 5173,
     // 开发环境统一通过 api-gateway:8080 转发到各子服务
     // 生产环境由 Nginx 反向代理实现，前端使用相对路径 /api/...

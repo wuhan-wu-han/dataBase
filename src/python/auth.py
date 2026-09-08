@@ -19,6 +19,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 try:
+    from verification import consume_token, send_code, verify_code
+except ImportError:
+    from src.python.verification import consume_token, send_code, verify_code
+
+try:
     from persistence import SessionLocal, get_db, init_db
     from persistence.auth_tables import AuthPermission, AuthRole, AuthUser
     from persistence.notification_tables import NotificationPreference
@@ -80,6 +85,7 @@ class RegisterRequest(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     departmentId: Optional[str] = None
+    verificationToken: str
 
 class ChangePasswordRequest(BaseModel):
     currentPassword: str
@@ -87,8 +93,21 @@ class ChangePasswordRequest(BaseModel):
 
 class ForgotPasswordRequest(BaseModel):
     username: str
-    contact: str
     newPassword: str
+    resetToken: str
+
+class VerificationSendRequest(BaseModel):
+    scene: str
+    channel: str
+    target: str
+    username: Optional[str] = None
+
+class VerificationVerifyRequest(BaseModel):
+    scene: str
+    channel: str
+    target: str
+    code: str
+    username: Optional[str] = None
 
 class CreateUserRequest(BaseModel):
     username: str
@@ -312,6 +331,54 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     return {"accessToken": issue_token(user), "tokenType": "Bearer", "expiresIn": JWT_TTL_SECONDS,
             "user": _public_user(user)}
 
+
+def _verification_target(channel: str, raw_target: str) -> str:
+    channel = channel.lower().strip()
+    if channel == "email":
+        target = normalize_email(raw_target)
+    elif channel == "sms":
+        target = normalize_phone(raw_target)
+    else:
+        raise HTTPException(status_code=400, detail="验证码通道无效")
+    if not target:
+        raise HTTPException(status_code=400, detail="邮箱或手机号格式不正确")
+    return target
+
+
+def _forgot_user_matches(db: Session, username: Optional[str], channel: str, target: str) -> bool:
+    user = db.query(AuthUser).filter_by(username=(username or "").strip()).first()
+    if not user or not user.enabled:
+        return False
+    stored = user.email if channel == "email" else user.phone
+    return bool(stored and hmac.compare_digest(stored, target))
+
+
+@router.post("/verification/send", summary="发送邮箱或短信验证码")
+def send_verification(request: VerificationSendRequest, db: Session = Depends(get_db)):
+    scene = request.scene.strip().lower()
+    channel = request.channel.strip().lower()
+    if scene not in {"register", "forgot_password", "change_contact"}:
+        raise HTTPException(status_code=400, detail="验证码使用场景无效")
+    target = _verification_target(channel, request.target)
+    if scene == "forgot_password" and not _forgot_user_matches(db, request.username, channel, target):
+        # 对外保持统一响应，避免枚举账号和联系方式。
+        return {"message": "如果账号信息匹配，验证码已发送", "expiresIn": 300}
+    expires = send_code(scene, channel, target)
+    return {"message": "验证码已发送", "expiresIn": expires}
+
+
+@router.post("/verification/verify", summary="校验验证码并签发一次性凭证")
+def verify_verification(request: VerificationVerifyRequest, db: Session = Depends(get_db)):
+    scene = request.scene.strip().lower()
+    channel = request.channel.strip().lower()
+    target = _verification_target(channel, request.target)
+    if scene == "forgot_password" and not _forgot_user_matches(db, request.username, channel, target):
+        raise HTTPException(status_code=400, detail="验证码无效或已过期")
+    if not re.fullmatch(r"\d{6}", request.code.strip()):
+        raise HTTPException(status_code=400, detail="验证码格式不正确")
+    token = verify_code(scene, channel, target, request.code.strip())
+    return {"verificationToken": token, "expiresIn": 600}
+
 @router.post("/register", summary="注册平台账号")
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
     username = request.username.strip()
@@ -328,7 +395,10 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
     phone = normalize_phone(request.phone)
     if not email and not phone:
         raise HTTPException(status_code=400, detail="请至少绑定一个邮箱或手机号")
+    if not email:
+        raise HTTPException(status_code=400, detail="注册账号必须绑定并验证邮箱")
     ensure_unique_contact(db, email, phone)
+    consume_token(request.verificationToken, "register", email)
 
     viewer_role = db.query(AuthRole).filter_by(code="viewer").first()
     if not viewer_role:
@@ -415,27 +485,18 @@ def change_password(request: ChangePasswordRequest, claims: dict = Depends(curre
     db.commit()
     return {"message": "密码修改成功，请重新登录"}
 
-@router.post("/forgot-password", summary="通过已绑定联系方式重置密码")
+@router.post("/forgot-password", summary="通过验证码凭证重置密码")
 def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    """适用于校内实训环境的账号找回流程。
-
-    用户名与已绑定邮箱或手机号必须同时匹配。生产环境应替换为短信/邮件验证码或一次性链接。
-    """
     username = request.username.strip()
-    raw_contact = request.contact.strip()
     user = db.query(AuthUser).filter_by(username=username).first()
     if not user or not user.enabled:
-        raise HTTPException(status_code=400, detail="账号或绑定联系方式不正确")
-
-    matched = False
-    if "@" in raw_contact:
-        matched = bool(user.email and hmac.compare_digest(user.email, normalize_email(raw_contact) or ""))
-    else:
-        matched = bool(user.phone and hmac.compare_digest(user.phone, normalize_phone(raw_contact) or ""))
-    if not matched:
-        raise HTTPException(status_code=400, detail="账号或绑定联系方式不正确")
-
+        raise HTTPException(status_code=400, detail="重置凭证无效或已过期")
     validate_password(request.newPassword)
+    payload = consume_token(request.resetToken, "forgot_password")
+    expected = user.email if payload.get("channel") == "email" else user.phone
+    if not expected or not hmac.compare_digest(expected, payload.get("target", "")):
+        raise HTTPException(status_code=400, detail="重置凭证与账号不匹配")
+
     user.password_hash = hash_password(request.newPassword)
     db.commit()
     return {"message": "密码重置成功，请使用新密码登录"}
