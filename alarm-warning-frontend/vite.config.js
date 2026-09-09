@@ -29,33 +29,34 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/platform/, '')
       },
-      // 市政井盖管控：直连 8005，去掉 /api/manhole-cover 前缀
+      // 市政井盖管控：直连 8005。后端路由自带 /api 前缀，只剥掉 /api/manhole-cover 段、保留 /api
       '/api/manhole-cover': {
         target: 'http://localhost:8005',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/manhole-cover/, '')
+        rewrite: (path) => path.replace(/^\/api\/manhole-cover/, '/api')
       },
-      // 供水管网管控：直连 8004，去掉 /api/water-supply 前缀
+      // 供水管网管控：直连 8004，保留 /api 前缀
       '/api/water-supply': {
         target: 'http://localhost:8004',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/water-supply/, '')
+        rewrite: (path) => path.replace(/^\/api\/water-supply/, '/api')
       },
-      // 队友子服务直连（跳过 Java 网关 :8080），StripPrefix=2 去掉 /api/{服务名} 前缀
+      // 队友子服务直连（跳过 Java 网关 :8080）。这些服务路由均带 /api 前缀，
+      // 只剥掉 /api/{服务名} 段、保留 /api（此前整段剥掉会把 /api 也去掉，导致后端 404）
       '/api/gas-asset': {
         target: 'http://localhost:8001',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/gas-asset/, '')
+        rewrite: (path) => path.replace(/^\/api\/gas-asset/, '/api')
       },
       '/api/road-hazard': {
         target: 'http://localhost:8002',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/road-hazard/, '')
+        rewrite: (path) => path.replace(/^\/api\/road-hazard/, '/api')
       },
       '/api/gas-risk': {
         target: 'http://localhost:8003',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/gas-risk/, '')
+        rewrite: (path) => path.replace(/^\/api\/gas-risk/, '/api')
       },
       // 其余 /api/**（预警等）仍走网关 :8080
       '/api': {
