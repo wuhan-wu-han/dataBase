@@ -406,7 +406,7 @@ const activeTab = ref('monitor')
 function onTabChange() { loadCurrentTab() }
 function loadCurrentTab() {
   const map = {
-    monitor: loadMonitorLatest,
+    monitor: () => { loadMonitorLatest(); loadAlarms() },
     dma: loadDmaZones,
     quality: loadQualityChain,
     pressure: loadStationsAndPlans,

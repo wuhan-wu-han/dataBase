@@ -4,10 +4,10 @@
 
     <!-- 数据卡片 -->
     <div class="road-hazard__stats">
-      <StatCard label="空洞隐患" :value="summary?.cavity_count ?? 0" icon="Warning" color="#FF3B30" />
-      <StatCard label="沉降监测点" :value="summary?.subsidence_point_count ?? 0" icon="MapLocation" color="#0071E3" />
-      <StatCard label="施工影响" :value="summary?.construction_count ?? 0" icon="Setup" color="#FF9500" />
-      <StatCard label="高风险点" :value="summary?.high_risk_count ?? 0" icon="WarningFilled" color="#FF3B30" />
+      <StatCard label="空洞隐患" :value="summary?.cavity_total ?? 0" icon="Warning" color="#FF3B30" />
+      <StatCard label="沉降监测点" :value="summary?.subsidence_points ?? 0" icon="MapLocation" color="#0071E3" />
+      <StatCard label="施工影响" :value="summary?.construction_total ?? 0" icon="Setup" color="#FF9500" />
+      <StatCard label="高风险点" :value="(summary?.cavity_high ?? 0) + (summary?.subsidence_high ?? 0) + (summary?.construction_high ?? 0)" icon="WarningFilled" color="#FF3B30" />
     </div>
 
     <!-- 风险分布图 -->
