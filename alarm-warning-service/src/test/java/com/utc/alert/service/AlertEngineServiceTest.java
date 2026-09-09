@@ -53,6 +53,9 @@ class AlertEngineServiceTest {
     @Mock
     private AlertGroupMapper alertGroupMapper;
 
+    @Mock
+    private NotificationBridgeService notificationBridgeService;
+
     @InjectMocks
     private AlertEngineServiceImpl alertEngineService;
 

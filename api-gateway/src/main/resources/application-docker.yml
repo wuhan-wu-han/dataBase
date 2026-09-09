@@ -5,6 +5,11 @@ spring:
   cloud:
     gateway:
       routes:
+        - id: platform-auth
+          uri: http://platform-api:8000
+          predicates:
+            - Path=/auth/**
+
         - id: alarm-warning-service
           uri: http://host.docker.internal:8085
           predicates:
@@ -34,7 +39,7 @@ spring:
             - StripPrefix=1
 
         - id: data-platform
-          uri: http://host.docker.internal:8000
+          uri: http://platform-api:8000
           predicates:
             - Path=/api/platform/**
           filters:

@@ -6,16 +6,40 @@ export default defineConfig({
   plugins: [vue()],
 
   server: {
+    host: '0.0.0.0',
     port: 5173,
     // 开发环境统一通过 api-gateway:8080 转发到各子服务
     // 生产环境由 Nginx 反向代理实现，前端使用相对路径 /api/...
     proxy: {
-      // 本地开发：/api/platform/** 直连 Python 综合服务(:8000)，去掉 /api/platform 前缀
-      // 等价于网关的 python-platform 路由 (StripPrefix=2)，无需启动 Java 网关即可看到真实数据
+      // 认证路由由 Python 综合服务(:8000)提供；容器部署时由 Nginx 转发至 platform-api:8000
+      '/auth': {
+        target: process.env.VITE_AUTH_TARGET || 'http://127.0.0.1:8000',
+        changeOrigin: true
+      },
+      // baidu 路由是 :8000 上唯一挂在 /api/platform 前缀下的，直接透传
+      '/api/platform/baidu': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      },
+      // 本地开发：/api/platform/** 直连 Python 综合服务(:8000)。
+      // 除 baidu 外该服务的路由都挂在根路径（/hazmat、/governance、/asset-cost…），
+      // 与网关 StripPrefix=2 一致，这里同样剥掉 /api/platform 前缀再转发。
       '/api/platform': {
         target: 'http://localhost:8000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/platform/, '')
+      },
+      // 市政井盖管控：直连 8005，去掉 /api/manhole-cover 前缀
+      '/api/manhole-cover': {
+        target: 'http://localhost:8005',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/manhole-cover/, '')
+      },
+      // 供水管网管控：直连 8004，去掉 /api/water-supply 前缀
+      '/api/water-supply': {
+        target: 'http://localhost:8004',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/water-supply/, '')
       },
       // 队友子服务直连（跳过 Java 网关 :8080），StripPrefix=2 去掉 /api/{服务名} 前缀
       '/api/gas-asset': {
@@ -32,11 +56,6 @@ export default defineConfig({
         target: 'http://localhost:8003',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/gas-risk/, '')
-      },
-      '/api/water-supply': {
-        target: 'http://localhost:8004',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/water-supply/, '')
       },
       // 其余 /api/**（预警等）仍走网关 :8080
       '/api': {

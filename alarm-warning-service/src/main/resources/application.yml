@@ -51,3 +51,8 @@ alert:
       alert-event: alert-event-topic
   dedup:
     window-minutes: 10
+
+notification:
+  auto-enabled: ${NOTIFICATION_AUTO_ENABLED:false}
+  platform-base-url: ${PLATFORM_API_URL:http://platform-api:8000}
+  internal-token: ${NOTIFICATION_INTERNAL_TOKEN:change-notification-internal-token}

@@ -49,7 +49,27 @@ spring:
           filters:
             - StripPrefix=2
 
-        # ── 4. Python 综合服务平台 (Python :8000) ──
+        # ── 5. 市政井盖全生命周期管控 (Python :8005) ──
+        # 前端请求 /api/manhole-cover/api/monitor/latest
+        # StripPrefix=2 剥掉 /api/manhole-cover，转发至 8005:/api/monitor/latest
+        - id: manhole-cover-control
+          uri: http://localhost:8005
+          predicates:
+            - Path=/api/manhole-cover/**
+          filters:
+            - StripPrefix=2
+
+        # ── 6. 供水管网精细化管控 (Python :8004) ──
+        # 前端请求 /api/water-supply/api/monitor/latest
+        # StripPrefix=2 剥掉 /api/water-supply，转发至 8004:/api/monitor/latest
+        - id: water-supply-control
+          uri: http://localhost:8004
+          predicates:
+            - Path=/api/water-supply/**
+          filters:
+            - StripPrefix=2
+
+        # ── 7. Python 综合服务平台 (Python :8000) ──
         # 前端请求 /api/platform/governance/overview
         # StripPrefix=2 剥掉 /api/platform，转发至 8000:/governance/overview
         # 覆盖模块：数据治理、危化品、管廊、预案、资产成本、工单
@@ -60,7 +80,7 @@ spring:
           filters:
             - StripPrefix=2
 
-        # ── 5. 分级分类预警引擎 (Java :8085) ──
+        # ── 8. 分级分类预警引擎 (Java :8085) ──
         # 兜底路由：主平台 API 路径已含 /api 前缀（如 /api/alerts）
         # 直接转发，不做 StripPrefix
         - id: alarm-warning-service

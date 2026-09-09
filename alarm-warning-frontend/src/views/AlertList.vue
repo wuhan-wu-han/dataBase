@@ -69,9 +69,15 @@
         <el-table-column label="时间" width="170">
           <template #default="{ row }"><span class="time-cell">{{ formatDateTime(row.eventTimestamp) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="160" align="center" fixed="right">
+        <el-table-column label="操作" width="220" align="center" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click.stop="goDetail(row)">详情</el-button>
+            <el-button
+              v-if="can('notification:send')"
+              link type="primary" size="small"
+              :loading="sendingId === row.id"
+              @click.stop="handleSendEmail(row)"
+            >发送邮件</el-button>
             <el-button
               v-if="row.alertStatus === 'OPEN'"
               link type="warning" size="small"
@@ -111,6 +117,8 @@ import StatCard from '@/components/StatCard.vue'
 import AlertLevelTag from '@/components/AlertLevelTag.vue'
 import AlertStatusTag from '@/components/AlertStatusTag.vue'
 import { getAlertList, updateAlertStatus } from '@/api/alert'
+import { sendConfiguredEmail } from '@/api/notification'
+import { can } from '@/stores/auth'
 import { formatDateTime } from '@/utils/format'
 
 const router = useRouter()
@@ -143,6 +151,7 @@ const query = ref({ page: 1, size: 10, alertLevel: '', alertStatus: '', deviceTy
 const tableData = ref([])
 const total = ref(0)
 const tableLoading = ref(false)
+const sendingId = ref(null)
 
 const loadData = async () => {
   tableLoading.value = true
@@ -190,6 +199,38 @@ const handleResolve = async (row) => {
     loadStats()
   } catch (e) {
     ElMessage.error('操作失败')
+  }
+}
+
+const handleSendEmail = async (row) => {
+  sendingId.value = row.id
+  try {
+    const result = await sendConfiguredEmail({
+      alertId: row.alertEventCode || String(row.id),
+      subject: `【城市生命线平台】【${row.alertLevel || '预警'}】${row.deviceType || '设备'}异常告警`,
+      content: [
+        `预警编号：${row.alertEventCode || row.id}`,
+        `预警等级：${row.alertLevel || '-'}`,
+        `设备编号：${row.deviceId || '-'}`,
+        `设备类型：${row.deviceType || '-'}`,
+        `所属区域：${row.areaId || '-'}`,
+        `监测指标：${row.metricKey || '-'}`,
+        `当前值：${row.metricValue ?? '-'}`,
+        `告警阈值：${row.thresholdValue ?? '-'}`,
+        `发生时间：${formatDateTime(row.eventTimestamp)}`,
+        `当前状态：${row.alertStatus || '-'}`
+      ].join('\n'),
+      alertLevel: row.alertLevel,
+      businessType: row.deviceType,
+      areaId: row.areaId
+    })
+    const item = result.items?.[0]
+    if (item?.status === 'SUCCESS') ElMessage.success('告警邮件发送成功')
+    else ElMessage.error(item?.errorMessage || '邮件发送失败，请在通知记录中查看原因')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.detail || error.message || '邮件发送失败')
+  } finally {
+    sendingId.value = null
   }
 }
 

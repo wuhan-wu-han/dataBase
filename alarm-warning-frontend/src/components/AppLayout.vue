@@ -45,6 +45,7 @@
           <el-dropdown @command="handleUserCommand">
             <div class="topbar-avatar"><span>{{ (authState.user?.displayName || '用').slice(0,1) }}</span></div>
             <template #dropdown><el-dropdown-menu>
+              <el-dropdown-item command="profile">个人中心</el-dropdown-item>
               <el-dropdown-item command="password">修改密码</el-dropdown-item>
               <el-dropdown-item v-if="can('user:manage')" command="users">用户管理</el-dropdown-item>
               <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
@@ -53,8 +54,8 @@
         </div>
       </header>
 
-      <!-- Mock 提示条：任一模块接口未连通时显示，避免演示数据被误认为真实数据 -->
-      <div v-if="hasMockData" class="layout__mockbar">
+      <!-- Mock 提示条：任一模块接口未连通时显示；综合态势页是对外演示主页面，不展示联调提示 -->
+      <div v-if="hasMockData && !isDemoShowcasePage" class="layout__mockbar">
         <el-icon :size="15"><WarningFilled /></el-icon>
         <span class="layout__mockbar-label">当前使用演示数据（Mock）</span>
         <span class="layout__mockbar-modules">{{ mockLabels }}</span>
@@ -99,6 +100,7 @@ const router = useRouter()
 const passwordVisible = ref(false), passwordSaving = ref(false)
 const passwordForm = reactive({ currentPassword: '', newPassword: '' })
 function handleUserCommand(command) {
+  if (command === 'profile') router.push('/profile')
   if (command === 'password') passwordVisible.value = true
   if (command === 'users') router.push('/users')
   if (command === 'logout') { clearSession(); router.replace('/login') }
@@ -117,6 +119,9 @@ async function submitPassword() {
 const isFlush = computed(() => !!route.meta?.fullBleed)
 
 const mockLabels = computed(() => mockModules.value.map((m) => m.label).join('、'))
+
+/** 综合态势页是对外演示主画面，联调期的 Mock 提示条不在该页展示。 */
+const isDemoShowcasePage = computed(() => route.name === 'GISSituation')
 
 // 折叠状态持久化 key
 const STORAGE_KEY = 'app_sidebar_collapsed'

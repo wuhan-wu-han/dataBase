@@ -50,6 +50,11 @@ try:
 except ImportError:
     from src.python.auth import router as auth_router, seed_rbac
 
+try:
+    from notification import router as notification_router, start_notification_worker
+except ImportError:
+    from src.python.notification import router as notification_router, start_notification_worker
+
 # 创建FastAPI应用实例
 app = FastAPI(
     title="智能制造工业设备监控平台",
@@ -84,6 +89,8 @@ app.mount("/output", StaticFiles(directory=output_dir), name="output")
 
 seed_rbac()
 app.include_router(auth_router)
+app.include_router(notification_router)
+start_notification_worker()
 
 # 注册数据治理与中台服务子模块路由
 try:
@@ -126,6 +133,13 @@ try:
 except ImportError:
     from src.python.asset_cost import router as asset_cost_router  # 项目根启动
 app.include_router(asset_cost_router)
+
+# 注册百度地图 Web API 代理路由（兼容两种启动方式）
+try:
+    from baidu_map_api import router as baidu_router            # cd src/python 后启动
+except ImportError:
+    from src.python.baidu_map_api import router as baidu_router  # 项目根启动
+app.include_router(baidu_router, prefix="/api/platform")
 
 # 注册平台智能助手子模块路由（接 DeepSeek 大模型，自然语言→数据查询/模块跳转）
 try:

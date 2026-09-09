@@ -68,7 +68,8 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private boolean isPublic(String path) {
-        return path.equals("/api/platform/auth/login")
+        return path.equals("/auth/login")
+            || path.equals("/api/platform/auth/login")
             || path.equals("/actuator/health")
             || path.startsWith("/frontend/");
     }
@@ -104,7 +105,12 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             return read ? "alert:view" : "alert:manage";
         }
         if (path.startsWith("/api/failure")) return read ? "failure:view" : "failure:manage";
-        if (path.startsWith("/api/platform/auth/")) return null;
+        if (path.startsWith("/auth/") || path.startsWith("/api/platform/auth/")) return null;
+        if (path.startsWith("/api/platform/notifications")) {
+            if (path.endsWith("/recipients") || path.endsWith("/send")) return "notification:send";
+            if (path.endsWith("/retry")) return "notification:retry";
+            return read ? "notification:view" : "notification:config";
+        }
         if (path.startsWith("/api/platform/gis")) return read ? "gis:view" : "gis:manage";
         if (path.startsWith("/api/platform/risk")) return read ? "risk:view" : "risk:manage";
         if (path.startsWith("/api/platform/hazmat")) return read ? "hazmat:view" : "hazmat:manage";

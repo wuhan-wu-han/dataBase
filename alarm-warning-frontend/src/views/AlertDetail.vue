@@ -28,23 +28,24 @@
           <h3 class="alert-detail__panel-title">状态操作</h3>
           <div class="alert-detail__action-buttons">
             <el-button
-              v-if="detail.alertStatus === 'OPEN'"
+              v-if="can('alert:manage') && detail.alertStatus === 'OPEN'"
               type="warning"
               :loading="statusUpdating"
               @click="handleStatus('ACKNOWLEDGED')"
             >确认</el-button>
             <el-button
-              v-if="detail.alertStatus === 'ACKNOWLEDGED'"
+              v-if="can('alert:manage') && detail.alertStatus === 'ACKNOWLEDGED'"
               type="success"
               :loading="statusUpdating"
               @click="handleStatus('RESOLVED')"
             >解决</el-button>
             <el-button
-              v-if="detail.alertStatus !== 'CLOSED'"
+              v-if="can('alert:manage') && detail.alertStatus !== 'CLOSED'"
               type="info"
               :loading="statusUpdating"
               @click="handleStatus('CLOSED')"
             >关闭</el-button>
+            <el-button v-if="can('notification:send')" type="primary" :icon="Message" @click="notificationVisible = true">发送通知</el-button>
             <span v-if="detail.alertStatus === 'CLOSED'" class="alert-detail__closed-hint">该事件已关闭</span>
           </div>
         </div>
@@ -147,6 +148,17 @@
           </div>
         </div>
       </section>
+
+      <section v-if="can('notification:view')" class="app-card alert-detail__notifications">
+        <div class="alert-detail__notifications-head"><h3 class="alert-detail__panel-title">通知记录</h3><el-button link type="primary" @click="loadNotifications">刷新</el-button></div>
+        <el-table v-loading="notificationLoading" :data="notificationRows" size="small" empty-text="暂无发送记录">
+          <el-table-column prop="recipientName" label="接收人" min-width="100" />
+          <el-table-column prop="channel" label="通道" width="80"><template #default="{ row }">{{ row.channel === 'EMAIL' ? '邮件' : '短信' }}</template></el-table-column>
+          <el-table-column prop="recipient" label="接收地址" min-width="170" />
+          <el-table-column prop="status" label="状态" width="90"><template #default="{ row }"><el-tag :type="row.status === 'SUCCESS' ? 'success' : row.status === 'FAILED' ? 'danger' : 'info'">{{ row.status === 'SUCCESS' ? '成功' : row.status === 'FAILED' ? '失败' : '待发送' }}</el-tag></template></el-table-column>
+          <el-table-column prop="sentAt" label="发送时间" min-width="165" />
+        </el-table>
+      </section>
     </template>
 
     <!-- 空态 -->
@@ -155,6 +167,7 @@
       <p>预警事件不存在或加载失败</p>
       <el-button type="primary" @click="$router.push('/alerts')">返回列表</el-button>
     </div>
+    <NotificationSendDialog v-model="notificationVisible" :alert="detail" @sent="loadNotifications" />
   </div>
 </template>
 
@@ -162,11 +175,14 @@
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Warning } from '@element-plus/icons-vue'
+import { ArrowLeft, Warning, Message } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import AlertLevelTag from '@/components/AlertLevelTag.vue'
 import AlertStatusTag from '@/components/AlertStatusTag.vue'
+import NotificationSendDialog from '@/components/NotificationSendDialog.vue'
 import { getAlertDetail, updateAlertStatus } from '@/api/alert'
+import { getNotifications } from '@/api/notification'
+import { can } from '@/stores/auth'
 import { formatDateTime } from '@/utils/format'
 
 const route = useRoute()
@@ -174,6 +190,22 @@ const route = useRoute()
 const loading = ref(false)
 const detail = ref(null)
 const statusUpdating = ref(false)
+const notificationVisible = ref(false)
+const notificationLoading = ref(false)
+const notificationRows = ref([])
+
+const loadNotifications = async () => {
+  if (!detail.value || !can('notification:view')) return
+  notificationLoading.value = true
+  try {
+    const data = await getNotifications({ alertId: detail.value.alertEventCode || detail.value.id, page: 1, size: 20 })
+    notificationRows.value = data.items || []
+  } catch (e) {
+    notificationRows.value = []
+  } finally {
+    notificationLoading.value = false
+  }
+}
 
 const loadDetail = async () => {
   const id = route.params.id
@@ -181,6 +213,7 @@ const loadDetail = async () => {
   loading.value = true
   try {
     detail.value = await getAlertDetail(id)
+    await loadNotifications()
   } catch (e) {
     ElMessage.error('加载预警详情失败')
     console.error('加载预警详情失败:', e)
@@ -376,6 +409,8 @@ onMounted(() => {
   color: var(--app-text-3);
   gap: 12px;
 }
+.alert-detail__notifications { margin-top: 16px; padding: 16px 20px; }
+.alert-detail__notifications-head { display: flex; align-items: center; justify-content: space-between; }
 .alert-detail__empty p {
   margin: 0 0 12px;
   font-size: 15px;
