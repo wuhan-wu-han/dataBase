@@ -148,6 +148,13 @@ except ImportError:
     from src.python.assistant import router as assistant_router  # 项目根启动
 app.include_router(assistant_router)
 
+# 注册故障预报与寿命预测子模块路由（替代从不启动的 Java alarm-warning-service）
+try:
+    from failure_prediction import router as failure_prediction_router            # cd src/python 后启动
+except ImportError:
+    from src.python.failure_prediction import router as failure_prediction_router  # 项目根启动
+app.include_router(failure_prediction_router)
+
 # 注册微信公众号/测试号消息回调（兼容两种启动方式）
 try:
     from wechat.routes import wechat_verify, wechat_message
