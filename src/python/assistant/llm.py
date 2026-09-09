@@ -13,11 +13,12 @@ class LLMError(Exception):
     """大模型调用失败（缺 key / 网络 / 非 200 / 响应结构异常）"""
 
 
-def chat(messages, tools=None, tool_choice="auto", temperature=0.3):
+def chat(messages, tools=None, tool_choice="auto", temperature=0.3, max_tokens=None):
     """单轮对话补全。返回 message dict（可能含 tool_calls）。
 
     :param messages: OpenAI 格式消息列表
     :param tools: OpenAI 格式工具定义列表；为空则普通对话
+    :param max_tokens: 可选，限制回复 token 数以加速响应
     """
     if not config.has_key():
         raise LLMError("未配置 DEEPSEEK_API_KEY：请在 src/python/.env 填入密钥后重启服务")
@@ -28,6 +29,8 @@ def chat(messages, tools=None, tool_choice="auto", temperature=0.3):
         "temperature": temperature,
         "stream": False,
     }
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = tool_choice
