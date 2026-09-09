@@ -8,6 +8,9 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // 微信回复里的模块导航链接经 cpolar 隧道(*.cpolar.top)回访前端；
+    // vite 默认拒绝非 localhost 的 Host 头(403)，这里放行自有隧道域的子域通配
+    allowedHosts: ['.cpolar.top'],
     // 开发环境统一通过 api-gateway:8080 转发到各子服务
     // 生产环境由 Nginx 反向代理实现，前端使用相对路径 /api/...
     proxy: {
