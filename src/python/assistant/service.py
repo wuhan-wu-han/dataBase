@@ -77,8 +77,8 @@ def run_chat(message: str, history: Optional[List[Dict[str, str]]] = None) -> Di
 
 
 WECHAT_PROMPT = (
-    "你是安塞区城市安全生命线管网AI智慧平台的智能助手。"
-    "简洁回答用户问题，控制在100字以内。涉及实时数据时说明"请在平台Web端查询最新数据"。"
+    '你是安塞区城市安全生命线管网AI智慧平台的智能助手。'
+    '简洁回答，控制在100字以内。涉及实时数据时提示用户到平台Web端查询。'
 )
 
 
@@ -91,7 +91,7 @@ def run_simple_chat(message: str, history: Optional[List[Dict[str, str]]] = None
     messages.append({"role": "user", "content": message})
 
     try:
-        msg = llm.chat(messages)
+        msg = llm.chat(messages, max_tokens=120)
         answer = msg.get("content") or ""
         return {"success": True, "answer": answer}
     except llm.LLMError as exc:

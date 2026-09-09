@@ -1,10 +1,11 @@
-"""微信公众号 / 测试号对接 —— 消息回调 + 自动回复
+"""微信公众号 / 测试号对接 —— 消息回调 + 客服消息异步推送
 
 流程：
-  微信用户发消息 → 微信服务器 POST XML → 本接口解析 → 调用助手 → XML 回复
+  微信用户发消息 → 微信服务器 POST XML → 本接口解析 → 立即回 success
+  → 后台异步调助手 (含工具调用) → 通过客服消息接口推送答案
 
 配置：
-  在 .env 中设置 WECHAT_TOKEN（与微信公众平台/测试号后台填的 Token 一致）
+  在 .env 中设置 WECHAT_TOKEN、WECHAT_APPID、WECHAT_APPSECRET
 """
 import asyncio
 import hashlib
@@ -17,11 +18,12 @@ from typing import Dict, List
 from fastapi import Request
 from fastapi.responses import PlainTextResponse
 
-from assistant.service import run_simple_chat
+from assistant.service import run_chat
+from . import api
 
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor = ThreadPoolExecutor(max_workers=8)
 
-# 每个用户保留最近对话（内存，重启清空，够用）
+# 每个用户保留最近对话（内存，重启清空）
 _sessions: Dict[str, List[Dict[str, str]]] = OrderedDict()
 _MAX_SESSIONS = 200
 
@@ -77,8 +79,55 @@ async def wechat_verify(request: Request) -> PlainTextResponse:
     return PlainTextResponse("forbidden", status_code=403)
 
 
+async def _process_and_push(from_user: str, content: str, history: list):
+    """后台异步：调助手 (含工具) → 客服消息推送答案"""
+    from assistant.config import PLATFORM_URL
+
+    print(f"[wechat-async] start processing user={from_user}", flush=True)
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(
+            _executor, run_chat, content, history
+        )
+        answer = result.get("answer", "")
+        if not result.get("success") or not answer:
+            answer = "抱歉，助手暂时出现问题，请稍后重试。"
+
+        # 处理导航动作：追加可点击链接
+        action = result.get("action")
+        if action and action.get("type") == "navigate" and action.get("path"):
+            link = f"{PLATFORM_URL}{action['path']}"
+            answer += f"\n\n👉 点击打开【{action.get('label', '模块')}】：{link}"
+
+        print(f"[wechat-async] reply user={from_user} len={len(answer)}", flush=True)
+    except Exception as exc:
+        print(f"[wechat-async] error: {exc}", flush=True)
+        answer = "抱歉，助手暂时出现问题，请稍后重试。"
+
+    # 追加到对话历史
+    history.append({"role": "user", "content": content})
+    history.append({"role": "assistant", "content": answer})
+    if len(history) > 20:
+        _sessions[from_user] = history[-20:]
+
+    # 通过客服消息推送
+    if api.is_configured():
+        print(f"[wechat-async] sending customer service message to {from_user}", flush=True)
+        try:
+            resp = api.send_customer_service_text(from_user, answer)
+            errcode = resp.get("errcode", 0)
+            if errcode != 0:
+                print(f"[wechat-async] send failed: {resp}", flush=True)
+            else:
+                print(f"[wechat-async] push success", flush=True)
+        except Exception as exc:
+            print(f"[wechat-async] push error: {exc}", flush=True)
+    else:
+        print("[wechat-async] WECHAT_APPID/APPSECRET not configured, cannot push", flush=True)
+
+
 async def wechat_message(request: Request) -> PlainTextResponse:
-    """POST /wechat — 接收用户消息，调用助手，回复结果"""
+    """POST /wechat — 接收用户消息，立即回 success，后台异步处理并推送"""
     body = await request.body()
     try:
         msg = _parse_xml(body)
@@ -91,9 +140,9 @@ async def wechat_message(request: Request) -> PlainTextResponse:
     to_user = msg.get("ToUserName", "")
     msg_id = msg.get("MsgId", "")
 
-    # 非文本消息
+    # 非文本消息：直接回复提示（同步，因为不需要调大模型）
     if msg_type != "text" or not content:
-        reply = "你好！我是安塞区城市安全生命线管网AI智慧平台助手，请直接输入问题，例如：\n- 当前有多少工单？\n- 管廊告警情况\n- 打开应急预案"
+        reply = "你好！我是安塞区城市安全生命线管网 AI 智慧平台助手，请直接输入问题，例如：\n- 当前有多少工单？\n- 管廊告警情况\n- 打开应急预案"
         return PlainTextResponse(_text_reply(from_user, to_user, reply), media_type="application/xml")
 
     # 去重：微信 5 秒超时重试
@@ -106,29 +155,10 @@ async def wechat_message(request: Request) -> PlainTextResponse:
     # 获取/创建用户对话历史
     history = _sessions.setdefault(from_user, [])
 
-    # 调用助手（线程池 + 4.8秒超时，微信要求5秒内响应）
-    # run_simple_chat 不走工具调用，直接 LLM 回答，通常 2-4 秒内完成
-    print(f"[wechat-msg] user={from_user} content={content!r}")
-    loop = asyncio.get_event_loop()
-    try:
-        result = await asyncio.wait_for(
-            loop.run_in_executor(_executor, run_simple_chat, content, history),
-            timeout=4.8
-        )
-        answer = result.get("answer", "")
-        if not result.get("success"):
-            answer = "抱歉，助手暂时出现问题，请稍后重试。"
-        print(f"[wechat-msg] replied: success={result.get('success')} len={len(answer)}")
-    except asyncio.TimeoutError:
-        print(f"[wechat-msg] TIMEOUT after 4.8s")
-        answer = "查询耗时较长，请稍后再发一次相同问题。"
+    # 后台异步处理 + 客服消息推送
+    print(f"[wechat-msg] user={from_user} content={content!r} → async", flush=True)
+    asyncio.create_task(_process_and_push(from_user, content, history))
 
-    # 追加到历史
-    history.append({"role": "user", "content": content})
-    history.append({"role": "assistant", "content": answer})
-    if len(history) > 20:
-        _sessions[from_user] = history[-20:]
+    # 立即返回 success，不触发微信超时
     _evict(_sessions, _MAX_SESSIONS)
-
-    xml_reply = _text_reply(from_user, to_user, answer)
-    return PlainTextResponse(xml_reply, media_type="application/xml")
+    return PlainTextResponse("success")
