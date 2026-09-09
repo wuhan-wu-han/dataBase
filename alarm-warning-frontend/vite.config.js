@@ -58,6 +58,12 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/gas-risk/, '/api')
       },
+      // 故障预报与寿命预测：由 Python 综合服务(:8000)提供（Java alarm-warning-service 从不启动）。
+      // 后端路由自带 /api/failure-predictions 前缀，直接透传、不改写。
+      '/api/failure-predictions': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      },
       // 其余 /api/**（预警等）仍走网关 :8080
       '/api': {
         target: 'http://localhost:8080',
