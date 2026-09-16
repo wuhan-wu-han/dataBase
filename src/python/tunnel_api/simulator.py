@@ -12,6 +12,7 @@ import random
 import threading
 from collections import deque
 from datetime import datetime
+from decimal import Decimal
 
 from .conflict import detect_conflicts
 from .models import (
@@ -138,7 +139,12 @@ def now_str():
 
 def sanitize(payload):
     """序列化净化：确保所有数值为原生类型（防 numpy 等类型导致序列化 500）"""
-    return json.loads(json.dumps(payload, default=lambda o: float(o) if isinstance(o, float) else o))
+    def convert(value):
+        if isinstance(value, Decimal):
+            return float(value)
+        raise TypeError("不支持序列化的数据类型: %s" % type(value).__name__)
+
+    return json.loads(json.dumps(payload, default=convert))
 
 
 # ==============================================================================

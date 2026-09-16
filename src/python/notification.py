@@ -287,9 +287,21 @@ def send_configured_email(
         alert_id=request.alertId.strip(), user_id=user.id, channel="EMAIL"
     ).first()
     if existing:
-        if existing.status != "SUCCESS":
-            _send_task(db, existing)
-        return {"created": 0, "items": [_task_dict(existing)]}
+        # 这是用户主动点击的“发送邮件”接口。即使上次已成功，也必须真正重发，
+        # 不能只返回旧 SUCCESS 记录，否则前端显示成功但收件箱没有新邮件。
+        existing.subject = request.subject.strip()[:200]
+        existing.content = request.content.strip()
+        existing.alert_level = (request.alertLevel or "").upper() or None
+        existing.business_type = request.businessType
+        existing.area_id = request.areaId
+        existing.recipient = recipient
+        existing.retry_count = 0
+        existing.status = "PENDING"
+        existing.error_message = None
+        existing.updated_at = datetime.now()
+        db.commit()
+        _send_task(db, existing)
+        return {"created": 0, "resent": 1, "items": [_task_dict(existing)]}
     task = NotificationTask(
         alert_id=request.alertId.strip(),
         user_id=user.id,

@@ -225,8 +225,8 @@ def create_trace(data: Dict) -> Dict:
             "volume_m3", "source", "destination", "carrier", "driver",
             "license_plate", "generate_time",
         )}, dispatch_time=data.get("dispatch_time"), arrive_time=data.get("arrive_time"),
-                          disposal_result=data.get("disposal_result", ""), status=data.get("status", "in_transit"),
-                          created_at=now)
+                          disposal_result=data.get("disposal_result", ""),
+                          status=data.get("status", "in_transit"))
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -500,53 +500,77 @@ def append_emergency_log(data: Dict) -> Dict:
 def _media_row(r):
     if r is None:
         return None
-    return {k: getattr(r, k) for k in (
+    data = {k: getattr(r, k) for k in (
         "media_id", "name", "hw_code", "media_type", "concentration_mgL",
         "threshold_concentration", "source", "last_sample", "status",
         "pipeline_id", "temperature", "pressure", "flow_rate",
         "created_at", "updated_at",
     )}
+    data.update({
+        "type_name": data["media_type"],
+        "temperature_c": data["temperature"],
+        "pressure_mpa": data["pressure"],
+        "flow_rate_m3h": data["flow_rate"],
+    })
+    return data
 
 
 def _route_row(r):
     if r is None:
         return None
-    return {k: (from_json(getattr(r, k)) if k == "waypoints" else getattr(r, k)) for k in (
+    data = {k: (from_json(getattr(r, k)) if k == "waypoints" else getattr(r, k)) for k in (
         "route_id", "source", "destination", "waypoints",
         "length_km", "approved_date", "company", "status", "hazard_level",
         "created_at",
     )}
+    data.update({"distance_km": data["length_km"], "carrier": data["company"]})
+    return data
 
 
 def _trace_row(r):
     if r is None:
         return None
-    return {k: getattr(r, k) for k in (
+    data = {k: getattr(r, k) for k in (
         "trace_id", "manifest_no", "hw_code", "substance_name",
         "volume_m3", "source", "destination", "carrier", "driver",
         "license_plate", "generate_time", "dispatch_time", "arrive_time",
-        "disposal_result", "status", "created_at",
+        "disposal_result", "status",
     )}
+    data["media_name"] = data["substance_name"]
+    return data
 
 
 def _segment_row(r):
     if r is None:
         return None
-    return {k: getattr(r, k) for k in (
+    data = {k: getattr(r, k) for k in (
         "segment_id", "route_id", "location", "material", "diameter_mm",
         "wall_thickness_mm", "current_thickness_mm", "corrosion_rate",
         "remaining_life_years", "risk_level", "last_inspection",
         "next_inspection", "created_at",
     )}
+    data.update({
+        "original_thickness_mm": data["wall_thickness_mm"],
+        "corrosion_rate_mm_year": data["corrosion_rate"],
+        "last_inspect": data["last_inspection"],
+        "next_inspect": data["next_inspection"],
+    })
+    return data
 
 
 def _ledger_row(r):
     if r is None:
         return None
-    return {k: getattr(r, k) for k in (
+    data = {k: getattr(r, k) for k in (
         "record_id", "category", "category_name", "factory", "substance",
         "volume_m3", "compliant", "issue_count", "record_date", "created_at",
     )}
+    data.update({
+        "ledger_id": data["record_id"],
+        "media_name": data["substance"],
+        "filing_date": data["record_date"],
+    })
+    return data
 
 
 def _valve_row(r):

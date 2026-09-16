@@ -33,7 +33,7 @@ export const MODULE_PREFIX = {
 /**
  * 创建带统一拦截器的 axios 实例
  * @param {string} prefix - 模块前缀（见 MODULE_PREFIX）
- * @param {{ silentErrors?: boolean }} options - silentErrors=true 时不弹出全局错误提示，
+ * @param {{ silentErrors?: boolean, timeoutMs?: number }} options - silentErrors=true 时不弹出全局错误提示，
  *        由调用方（API 层）自行降级到 Mock 数据，避免页面出现"系统内部错误/AxiosError"
  * @returns {import('axios').AxiosInstance}
  */
@@ -41,7 +41,7 @@ export function createModuleHttp(prefix, options = {}) {
   const silentErrors = !!options.silentErrors
   const instance = axios.create({
     baseURL: prefix,
-    timeout: 15000
+    timeout: options.timeoutMs || 15000
   })
 
   // 请求拦截器：可在此注入 token 等

@@ -2,6 +2,8 @@
 
 用 httpx（项目已装，requests 未装）。所有异常统一抛 LLMError，由路由层转成友好提示。
 """
+import time
+
 import httpx
 
 from . import config
@@ -38,11 +40,18 @@ def chat(messages, tools=None, tool_choice="auto", temperature=0.3):
     }
     url = config.DEEPSEEK_BASE_URL + "/chat/completions"
 
-    try:
-        with httpx.Client(timeout=_TIMEOUT) as client:
-            resp = client.post(url, json=payload, headers=headers)
-    except httpx.HTTPError as exc:
-        raise LLMError("调用大模型网络异常：%s" % exc)
+    last_error = None
+    for attempt in range(2):
+        try:
+            with httpx.Client(timeout=_TIMEOUT) as client:
+                resp = client.post(url, json=payload, headers=headers)
+            break
+        except httpx.HTTPError as exc:
+            last_error = exc
+            if attempt == 0:
+                time.sleep(0.4)
+    else:
+        raise LLMError("调用大模型网络异常：%s" % last_error)
 
     if resp.status_code != 200:
         raise LLMError("大模型返回 HTTP %d：%s" % (resp.status_code, resp.text[:300]))

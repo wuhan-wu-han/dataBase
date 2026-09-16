@@ -4,10 +4,10 @@
 
     <!-- 数据卡片 -->
     <div class="road-hazard__stats">
-      <StatCard label="空洞隐患" :value="summary?.cavity_count ?? 0" icon="Warning" color="#FF3B30" />
-      <StatCard label="沉降监测点" :value="summary?.subsidence_point_count ?? 0" icon="MapLocation" color="#0071E3" />
-      <StatCard label="施工影响" :value="summary?.construction_count ?? 0" icon="Setup" color="#FF9500" />
-      <StatCard label="高风险点" :value="summary?.high_risk_count ?? 0" icon="WarningFilled" color="#FF3B30" />
+      <StatCard label="空洞隐患" :value="summary?.cavity_total ?? 0" icon="Warning" color="#FF3B30" />
+      <StatCard label="沉降监测点" :value="summary?.subsidence_points ?? 0" icon="MapLocation" color="#0071E3" />
+      <StatCard label="施工影响" :value="summary?.construction_total ?? 0" icon="Setup" color="#FF9500" />
+      <StatCard label="高风险点" :value="(summary?.cavity_high ?? 0) + (summary?.subsidence_high ?? 0) + (summary?.construction_high ?? 0)" icon="WarningFilled" color="#FF3B30" />
     </div>
 
     <!-- 风险分布图 -->
@@ -39,10 +39,10 @@
         empty-text="暂无数据"
       >
         <el-table-column prop="code" label="编号" width="140" />
-        <el-table-column prop="road" label="道路" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="road_name" label="道路" min-width="160" show-overflow-tooltip />
         <el-table-column prop="district" label="区域" width="120" />
         <el-table-column prop="depth_m" label="深度(m)" width="100" align="right" />
-        <el-table-column prop="volume_m3" label="体积(m³)" width="110" align="right" />
+        <el-table-column prop="cavity_volume" label="体积(m³)" width="110" align="right" />
         <el-table-column label="风险等级" width="110" align="center">
           <template #default="{ row }">
             <el-tag :type="riskTag(row.risk_level)" size="small">{{ row.risk_level }}</el-tag>
@@ -66,7 +66,7 @@ import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import { useEChart } from '@/utils/chart'
-import { getSummary, getCavities, getCavityStats } from '@/api/roadHazard'
+import { getSummary, getCavities, getCavityStats, getSubsStats } from '@/api/roadHazard'
 
 const summary = ref(null)
 const cavities = ref([])
@@ -80,22 +80,23 @@ const { setOption: setSubsBarOption } = useEChart(subsBarRef)
 
 // 风险等级标签类型
 function riskTag(level) {
-  const map = { '高': 'danger', '中': 'warning', '低': 'success' }
+  const map = { '高': 'danger', '中': 'warning', '低': 'success', '高风险': 'danger', '中风险': 'warning', '低风险': 'success' }
   return map[level] || 'info'
 }
 
 async function loadData() {
   loading.value = true
   try {
-    const [s, list, stats] = await Promise.all([
+    const [s, list, stats, subsStats] = await Promise.all([
       getSummary(),
       getCavities({ page: 1, page_size: 20 }),
-      getCavityStats()
+      getCavityStats(),
+      getSubsStats()
     ])
     summary.value = s
     cavities.value = list.items || []
     renderCavityPie(stats.by_risk || [])
-    renderSubsBar()
+    renderSubsBar(subsStats.by_district || [])
   } catch (e) {
     ElMessage.error('无法连接道路塌陷服务：' + e.message)
   } finally {
@@ -105,7 +106,7 @@ async function loadData() {
 
 // 空洞风险等级环形图
 function renderCavityPie(byRisk) {
-  const colorMap = { '高': '#FF3B30', '中': '#FF9500', '低': '#34C759' }
+  const colorMap = { '高': '#FF3B30', '中': '#FF9500', '低': '#34C759', '高风险': '#FF3B30', '中风险': '#FF9500', '低风险': '#34C759' }
   const total = byRisk.reduce((sum, i) => sum + i.value, 0)
   setCavityPieOption({
     tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
@@ -131,14 +132,14 @@ function renderCavityPie(byRisk) {
   })
 }
 
-// 沉降分布柱状图（占位，无数据时显示空轴）
-function renderSubsBar() {
+// 沉降监测点区域分布
+function renderSubsBar(byDistrict) {
   setSubsBarOption({
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     grid: { left: 60, right: 30, top: 20, bottom: 20 },
-    xAxis: { type: 'category', data: [], axisLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } }, axisLabel: { color: '#86868B' } },
+    xAxis: { type: 'category', data: byDistrict.map(i => i.name), axisLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } }, axisLabel: { color: '#86868B' } },
     yAxis: { type: 'value', splitLine: { lineStyle: { color: 'rgba(0,0,0,0.04)' } }, axisLabel: { color: '#86868B' } },
-    series: [{ type: 'bar', data: [], itemStyle: { color: '#0071E3', borderRadius: [4, 4, 0, 0] } }]
+    series: [{ type: 'bar', data: byDistrict.map(i => i.value), itemStyle: { color: '#0071E3', borderRadius: [4, 4, 0, 0] } }]
   })
 }
 

@@ -84,7 +84,11 @@ def _init_db():
         # 检查是否空库
         media_count = _count_table(_store.HazmatMedia)
         route_count = _count_table(_store.HazmatRoute)
-        if media_count == 0 and route_count == 0:
+        trace_count = _count_table(_store.HazmatTrace)
+        segment_count = _count_table(_store.HazmatPipeSegment)
+        ledger_count = _count_table(_store.HazmatLedger)
+        valve_count = _count_table(_store.HazmatValve)
+        if 0 in (media_count, route_count, trace_count, segment_count, ledger_count, valve_count):
             _seed_hazmat()
         else:
             _load_all_collections()
@@ -106,7 +110,8 @@ def _count_table(model_cls):
 def _seed_hazmat():
     """空库时注入种子数据"""
     from . import store as _store
-    for m in seed_media():
+    if _count_table(_store.HazmatMedia) == 0:
+      for m in seed_media():
         _store.create_media({
             "media_id": m["media_id"], "name": m["name"],
             "hw_code": m["hw_code"], "media_type": m["media_type"],
@@ -114,10 +119,12 @@ def _seed_hazmat():
             "threshold_concentration": m["threshold_concentration"],
             "source": m["source"], "last_sample": m["last_sample"],
             "status": m["status"], "pipeline_id": m.get("pipeline_id"),
-            "temperature": m.get("temperature"), "pressure": m.get("pressure"),
-            "flow_rate": m.get("flow_rate"),
+            "temperature": m.get("temperature_c", m.get("temperature")),
+            "pressure": m.get("pressure_mpa", m.get("pressure")),
+            "flow_rate": m.get("flow_rate_m3h", m.get("flow_rate")),
         })
-    for r in seed_routes():
+    if _count_table(_store.HazmatRoute) == 0:
+      for r in seed_routes():
         _store.create_route({
             "route_id": r["route_id"], "source": r["source"],
             "destination": r["destination"], "waypoints": r["waypoints"],
@@ -126,37 +133,43 @@ def _seed_hazmat():
             "company": r.get("carrier", ""), "status": r["status"],
             "hazard_level": "high" if r["status"] == "deviated" else "normal",
         })
-    for t in seed_traceability():
+    if _count_table(_store.HazmatTrace) == 0:
+      for t in seed_traceability():
         _store.create_trace({
             "trace_id": t["trace_id"], "manifest_no": t["manifest_no"],
-            "hw_code": t["hw_code"], "substance_name": t["substance_name"],
+            "hw_code": t["hw_code"], "substance_name": t["media_name"],
             "volume_m3": t["volume_m3"], "source": t["source"],
             "destination": t["destination"], "carrier": t["carrier"],
-            "driver": t["driver"], "license_plate": t["license_plate"],
+            "driver": t.get("driver", "演示驾驶员"),
+            "license_plate": t.get("license_plate", "鄂A·DEMO"),
             "generate_time": t["generate_time"],
             "dispatch_time": t["dispatch_time"], "arrive_time": t["arrive_time"],
             "disposal_result": t["disposal_result"], "status": t["status"],
         })
-    for s in seed_pipe_segments():
+    if _count_table(_store.HazmatPipeSegment) == 0:
+      for s in seed_pipe_segments():
         _store.create_segment({
             "segment_id": s["segment_id"], "route_id": s["route_id"],
             "location": s["location"], "material": s["material"],
-            "diameter_mm": s["diameter_mm"], "wall_thickness_mm": s["wall_thickness_mm"],
+            "diameter_mm": s.get("diameter_mm", 200),
+            "wall_thickness_mm": s["original_thickness_mm"],
             "current_thickness_mm": s["current_thickness_mm"],
-            "corrosion_rate": s["corrosion_rate"],
+            "corrosion_rate": s["corrosion_rate_mm_year"],
             "remaining_life_years": s["remaining_life_years"],
-            "risk_level": s["risk_level"], "last_inspection": s["last_inspection"],
-            "next_inspection": s["next_inspection"],
+            "risk_level": s["risk_level"], "last_inspection": s["last_inspect"],
+            "next_inspection": s["next_inspect"],
         })
-    for l in seed_compliance_ledger():
+    if _count_table(_store.HazmatLedger) == 0:
+      for l in seed_compliance_ledger():
         _store.create_ledger({
-            "record_id": l["record_id"], "category": l["category"],
+            "record_id": l["ledger_id"], "category": l["category"],
             "category_name": l["category_name"], "factory": l["factory"],
-            "substance": l["substance"], "volume_m3": l["volume_m3"],
+            "substance": l["media_name"], "volume_m3": l["volume_m3"],
             "compliant": l["compliant"], "issue_count": l["issue_count"],
-            "record_date": l["record_date"],
+            "record_date": l["filing_date"],
         })
-    for v in seed_emergency_valves():
+    if _count_table(_store.HazmatValve) == 0:
+      for v in seed_emergency_valves():
         auto_close = v.get("auto_close", False)
         if isinstance(auto_close, str):
             auto_close = auto_close.lower() in ("true", "1")

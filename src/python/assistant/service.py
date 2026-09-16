@@ -16,6 +16,24 @@ SYSTEM_PROMPT = """你是"安塞区城市安全生命线管网AI智慧平台"的
 5. 回答面向城市安全运维管理者，专业、准确、精炼。"""
 
 
+def _local_fallback(message: str, error: Exception) -> Optional[Dict[str, Any]]:
+    """模型网络异常时，用平台真实接口回答高频数据问题。"""
+    text = message.strip().lower()
+    if "工单" in text and ("待派单" in text or "未派单" in text):
+        data = tools.execute("query_workorder_overview", {})
+        if not data.get("_error"):
+            count = int(data.get("pending_dispatch", 0))
+            return {
+                "success": True,
+                "answer": f"当前有 **{count} 个待派单工单**。",
+                "action": None,
+                "tool_results": [{"tool": "query_workorder_overview", "args": {}, "data": data}],
+                "model": "local-data-fallback",
+                "warning": "DeepSeek 网络暂时不可用，已使用平台实时数据回答。",
+            }
+    return None
+
+
 def run_chat(message: str, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
     messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     if history:
@@ -64,6 +82,9 @@ def run_chat(message: str, history: Optional[List[Dict[str, str]]] = None) -> Di
         else:
             answer = answer or "已为你查询到相关数据，请查看下方结果。"
     except llm.LLMError as exc:
+        fallback = _local_fallback(message, exc)
+        if fallback:
+            return fallback
         return {"success": False, "error": str(exc), "answer": "",
                 "action": None, "tool_results": tool_results,
                 "model": config.DEEPSEEK_MODEL}
