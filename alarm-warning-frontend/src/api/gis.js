@@ -15,7 +15,7 @@ import { MODULE_PREFIX, createModuleHttp } from './gateway'
 import { GIS_LAYERS, LAYER_MAP, areaOf, riskLevelOf } from '@/config/gisLayers'
 import { GIS_DEMO_DATA } from '@/data/gisDemoData'
 
-/** 临时演示开关：关闭后完整恢复真实 API 数据通道。 */
+/** 临时演示开关：置 VITE_GIS_DEMO_MODE=true（.env.local）启用演示数据，关闭后完整恢复真实 API 数据通道。 */
 export const GIS_DEMO_MODE = String(import.meta.env.VITE_GIS_DEMO_MODE || '').trim().toLowerCase() === 'true'
 
 // ---------------------------------------------------------------------------
@@ -155,10 +155,17 @@ function attachVerifiedAlertCoordinates(alerts, allRecords) {
 
 // ---------------------------------------------------------------------------
 // 各图层数据源
+//
+// 已知数据缺口（截至 2026-09）：
+//   gas   —— gas-risk(:8003) 并无 /pipelines 路由，此请求恒空；管网服务均不返回
+//            LineString/坐标序列，故 water/waste 直接置空，不伪造线段。
+//   alert —— /api/alert 命中 vite 兜底代理转发到已停用的 Java 网关(:8080)，真实环境
+//            无数据；:8000 也未提供平台级 /alerts。
+// 答辩演示如需完整点位，可开启 VITE_GIS_DEMO_MODE=true（写入 gitignore 的 .env.local，
+// 仅本机/演示 VM 生效，不改动真实数据通道），详见 GIS_DEMO_MODE 定义处。
 // ---------------------------------------------------------------------------
 
 const LAYER_SOURCE = {
-  // 三类管网服务当前没有返回 LineString/坐标序列的接口，保留图层能力但不伪造线段。
   gas: { prefix: MODULE_PREFIX.gasRisk, path: '/pipelines?page=1&page_size=200' },
   water: { prefix: null, path: null },
   waste: { prefix: null, path: null },

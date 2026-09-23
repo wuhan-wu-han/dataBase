@@ -58,6 +58,13 @@ TEAMMATE_SERVICES = {
     "manhole_cover": os.environ.get("TEAMMATE_MANHOLE_COVER_BASE", "http://127.0.0.1:8005/api").rstrip("/"),
 }
 
+# 微信公众号 / 测试号（用于客服消息异步推送）
+WECHAT_APPID = os.environ.get("WECHAT_APPID", "").strip()
+WECHAT_APPSECRET = os.environ.get("WECHAT_APPSECRET", "").strip()
+
+# 平台前端地址（用于生成可点击的模块跳转链接）
+PLATFORM_URL = os.environ.get("PLATFORM_URL", "http://127.0.0.1:5173").rstrip("/")
+
 
 def has_key() -> bool:
     return bool(DEEPSEEK_API_KEY)

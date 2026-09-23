@@ -488,7 +488,7 @@ const activeTab = ref('monitor')
 function onTabChange() { loadCurrentTab() }
 function loadCurrentTab() {
   const map = {
-    monitor: loadMonitorLatest,
+    monitor: () => { loadMonitorLatest(); loadMonitorAlarms() },
     archive: loadManholes,
     orders: loadOrders,
     theft: loadTheftCases,

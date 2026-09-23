@@ -37,7 +37,7 @@ def _providers():
     return [local, cloud]
 
 
-def _request(provider, messages, tools, tool_choice, temperature):
+def _request(provider, messages, tools, tool_choice, temperature, max_tokens=None):
     if provider["provider"] == "deepseek" and not provider["api_key"]:
         raise LLMError("未配置 DEEPSEEK_API_KEY，无法使用云端备用模型")
 
@@ -54,6 +54,8 @@ def _request(provider, messages, tools, tool_choice, temperature):
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = tool_choice
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
 
     headers = {
         "Authorization": "Bearer " + provider["api_key"],
@@ -91,11 +93,12 @@ def _request(provider, messages, tools, tool_choice, temperature):
         raise LLMError("%s 模型响应结构异常：%s" % (provider["provider"], exc))
 
 
-def chat(messages, tools=None, tool_choice="auto", temperature=0.3):
+def chat(messages, tools=None, tool_choice="auto", temperature=0.3, max_tokens=None):
     """单轮对话补全。返回 message dict（可能含 tool_calls）。
 
     :param messages: OpenAI 格式消息列表
     :param tools: OpenAI 格式工具定义列表；为空则普通对话
+    :param max_tokens: 可选，限制回复 token 数以加速响应
     """
     errors = []
     for provider in _providers():

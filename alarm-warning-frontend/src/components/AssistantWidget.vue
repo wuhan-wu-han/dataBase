@@ -300,7 +300,13 @@ async function send(text) {
       messages.value.push({ role: 'assistant', content: '', error: (res && res.error) || '助手暂时不可用，请稍后再试' })
     }
   } catch (e) {
-    messages.value.push({ role: 'assistant', content: '', error: '请求失败：' + (e?.message || e) + '（后端 :8000 是否已启动？）' })
+    let tip = '请求失败：' + (e?.response?.data?.error || e?.message || e)
+    if (e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')) {
+      tip = '助手思考时间较长，请稍后重试或换个问法'
+    } else if (!e?.response) {
+      tip = '无法连接后端服务，请确认 :8000 已启动'
+    }
+    messages.value.push({ role: 'assistant', content: '', error: tip })
   } finally {
     loading.value = false
     scroll()

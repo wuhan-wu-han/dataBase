@@ -41,7 +41,7 @@ export function createModuleHttp(prefix, options = {}) {
   const silentErrors = !!options.silentErrors
   const instance = axios.create({
     baseURL: prefix,
-    timeout: options.timeoutMs || 15000
+    timeout: options.timeoutMs || options.timeout || 15000
   })
 
   // 请求拦截器：可在此注入 token 等
