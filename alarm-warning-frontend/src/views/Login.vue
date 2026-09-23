@@ -32,11 +32,14 @@
           <el-input v-model.trim="forgotForm.contact" placeholder="请输入已绑定的邮箱或手机号" />
         </el-form-item>
         <el-form-item label="验证码" prop="code">
-          <div class="code-input">
-            <el-input v-model.trim="forgotForm.code" maxlength="6" placeholder="6 位验证码" />
-            <el-button :loading="forgotSending" :disabled="forgotCountdown > 0" @click="sendForgotCode">
-              {{ forgotCountdown ? `${forgotCountdown}s` : '获取验证码' }}
-            </el-button>
+          <div class="code-field">
+            <div class="code-input">
+              <el-input v-model.trim="forgotForm.code" maxlength="6" placeholder="6 位验证码" />
+              <el-button :loading="forgotSending" :disabled="forgotCountdown > 0" @click="sendForgotCode">
+                {{ forgotCountdown ? `重新发送 ${forgotCountdown}s` : '获取验证码' }}
+              </el-button>
+            </div>
+            <span v-if="forgotExpiry > 0" class="code-expiry">验证码有效期 {{ formatExpiry(forgotExpiry) }}</span>
           </div>
         </el-form-item>
         <el-form-item label="新密码" prop="newPassword">
@@ -72,11 +75,14 @@
             <el-input v-model.trim="registerForm.departmentId" placeholder="选填" />
           </el-form-item>
           <el-form-item label="邮箱验证码" prop="code" class="full-row">
-            <div class="code-input">
-              <el-input v-model.trim="registerForm.code" maxlength="6" placeholder="6 位验证码" />
-              <el-button :loading="registerSending" :disabled="registerCountdown > 0" @click="sendRegisterCode">
-                {{ registerCountdown ? `${registerCountdown}s` : '获取验证码' }}
-              </el-button>
+            <div class="code-field">
+              <div class="code-input">
+                <el-input v-model.trim="registerForm.code" maxlength="6" placeholder="6 位验证码" />
+                <el-button :loading="registerSending" :disabled="registerCountdown > 0" @click="sendRegisterCode">
+                  {{ registerCountdown ? `重新发送 ${registerCountdown}s` : '获取验证码' }}
+                </el-button>
+              </div>
+              <span v-if="registerExpiry > 0" class="code-expiry">验证码有效期 {{ formatExpiry(registerExpiry) }}</span>
             </div>
           </el-form-item>
           <el-form-item label="密码" prop="password">
@@ -96,7 +102,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { onBeforeUnmount, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Odometer } from '@element-plus/icons-vue'
@@ -117,6 +123,10 @@ const forgotSending = ref(false)
 const registerSending = ref(false)
 const forgotCountdown = ref(0)
 const registerCountdown = ref(0)
+const forgotExpiry = ref(0)
+const registerExpiry = ref(0)
+const activeTimers = new Map()
+const registerVerification = reactive({ token: '', target: '', expiresAt: 0 })
 const form = reactive({ username: '', password: '' })
 const forgotForm = reactive({ username: '', contact: '', code: '', newPassword: '', confirmPassword: '' })
 const registerForm = reactive({ username: '', displayName: '', email: '', phone: '', departmentId: '', code: '', password: '', confirmPassword: '' })
@@ -158,6 +168,7 @@ const registerRules = {
 
 function openRegister() {
   Object.assign(registerForm, { username: form.username, displayName: '', email: '', phone: '', departmentId: '', code: '', password: '', confirmPassword: '' })
+  Object.assign(registerVerification, { token: '', target: '', expiresAt: 0 })
   registerVisible.value = true
 }
 
@@ -169,24 +180,40 @@ async function submitRegister() {
   }
   registering.value = true
   try {
-    const verified = await verifyVerificationCode({
-      scene: 'register', channel: 'email', target: registerForm.email, code: registerForm.code
-    })
+    const normalizedEmail = registerForm.email.trim().toLowerCase()
+    let verificationToken = registerVerification.target === normalizedEmail &&
+      registerVerification.expiresAt > Date.now()
+      ? registerVerification.token
+      : ''
+    if (!verificationToken) {
+      const verified = await verifyVerificationCode({
+        scene: 'register', channel: 'email', target: normalizedEmail, code: registerForm.code
+      })
+      verificationToken = verified.verificationToken
+      Object.assign(registerVerification, {
+        token: verificationToken,
+        target: normalizedEmail,
+        expiresAt: Date.now() + (Number(verified.expiresIn) || 600) * 1000
+      })
+    }
     const result = await register({
       username: registerForm.username,
       displayName: registerForm.displayName,
-      email: registerForm.email,
+      email: normalizedEmail,
       phone: registerForm.phone,
       departmentId: registerForm.departmentId,
       password: registerForm.password,
-      verificationToken: verified.verificationToken
+      verificationToken
     })
     registerVisible.value = false
     form.username = result.username || registerForm.username
     form.password = ''
     ElMessage.success(result.message || '注册成功，请登录')
   } catch (error) {
-    ElMessage.error(error.response?.data?.detail || error.message || '注册失败，请重试')
+    const detail = error.response?.data?.detail || error.message || '注册失败，请重试'
+    if (/验证凭证/.test(detail)) Object.assign(registerVerification, { token: '', target: '', expiresAt: 0 })
+    ElMessage.closeAll()
+    ElMessage.error(error.response?.status === 409 ? `${detail}，请更换用户名后重新提交，验证码仍然有效` : detail)
   } finally {
     registering.value = false
   }
@@ -222,21 +249,35 @@ async function resetPassword() {
   }
 }
 
-function runCountdown(state) {
-  state.value = 60
+function runCountdown(state, seconds) {
+  const oldTimer = activeTimers.get(state)
+  if (oldTimer) window.clearInterval(oldTimer)
+  state.value = Math.max(0, Number(seconds) || 0)
   const timer = window.setInterval(() => {
     state.value -= 1
-    if (state.value <= 0) window.clearInterval(timer)
+    if (state.value <= 0) {
+      state.value = 0
+      window.clearInterval(timer)
+      activeTimers.delete(state)
+    }
   }, 1000)
+  activeTimers.set(state, timer)
+}
+
+function formatExpiry(seconds) {
+  const minutes = Math.floor(seconds / 60)
+  return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
 async function sendRegisterCode() {
   if (!registerForm.email) return ElMessage.warning('请先填写电子邮箱')
   registerSending.value = true
   try {
-    await sendVerificationCode({ scene: 'register', channel: 'email', target: registerForm.email })
-    runCountdown(registerCountdown)
-    ElMessage.success('验证码已发送，请检查邮箱')
+    Object.assign(registerVerification, { token: '', target: '', expiresAt: 0 })
+    const result = await sendVerificationCode({ scene: 'register', channel: 'email', target: registerForm.email })
+    runCountdown(registerCountdown, 60)
+    runCountdown(registerExpiry, result.expiresIn || 300)
+    ElMessage.success('验证码已发送，5 分钟内有效')
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '验证码发送失败')
   } finally { registerSending.value = false }
@@ -246,16 +287,22 @@ async function sendForgotCode() {
   if (!forgotForm.username || !forgotForm.contact) return ElMessage.warning('请先填写用户名和绑定联系方式')
   forgotSending.value = true
   try {
-    await sendVerificationCode({
+    const result = await sendVerificationCode({
       scene: 'forgot_password', channel: forgotForm.contact.includes('@') ? 'email' : 'sms',
       target: forgotForm.contact, username: forgotForm.username
     })
-    runCountdown(forgotCountdown)
-    ElMessage.success('如果账号信息匹配，验证码已发送')
+    runCountdown(forgotCountdown, 60)
+    runCountdown(forgotExpiry, result.expiresIn || 300)
+    ElMessage.success('如果账号信息匹配，验证码将在 5 分钟内有效')
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '验证码发送失败')
   } finally { forgotSending.value = false }
 }
+
+onBeforeUnmount(() => {
+  for (const timer of activeTimers.values()) window.clearInterval(timer)
+  activeTimers.clear()
+})
 
 async function submit() {
   if (loading.value || !(await formRef.value?.validate().catch(() => false))) return
@@ -291,6 +338,8 @@ h1 { margin: 0; color: #1d1d1f; font-size: 28px; letter-spacing: -.03em; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 .full-row { grid-column: 1 / -1; }
 .code-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; width: 100%; }
+.code-field { width: 100%; }
+.code-expiry { display: block; margin-top: 6px; color: #5f6f82; font-size: 12px; font-variant-numeric: tabular-nums; }
 @media (max-width: 520px) { .login-card { padding: 30px 24px; } }
 @media (max-width: 520px) { .form-grid { grid-template-columns: 1fr; } .full-row { grid-column: auto; } }
 </style>

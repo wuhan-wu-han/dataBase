@@ -2,7 +2,7 @@
 import json
 from typing import Any, Dict, List, Optional
 
-from . import config, llm, tools
+from . import config, llm, rag, tools
 
 SYSTEM_PROMPT = """你是"安塞区城市安全生命线管网AI智慧平台"的官方智能助手。
 平台覆盖城市生命线全链条业务，包括：工单管理、应急预案、资产成本、综合管廊、危化品监管、数据治理（以上为本平台直管），
@@ -16,9 +16,62 @@ SYSTEM_PROMPT = """你是"安塞区城市安全生命线管网AI智慧平台"的
 5. 回答面向城市安全运维管理者，专业、准确、精炼。"""
 
 
-def _local_fallback(message: str, error: Exception) -> Optional[Dict[str, Any]]:
-    """模型网络异常时，用平台真实接口回答高频数据问题。"""
+def _select_tool_schemas(message: str) -> List[Dict[str, Any]]:
+    """按问题领域缩小工具集，避免把四十多个工具全部塞给本地小模型。"""
+    text = message.lower()
+    groups = [
+        (("预警", "告警"), ("query_alert_",)),
+        (("工单", "派单"), ("query_workorder_",)),
+        (("预案", "应急"), ("query_plan_",)),
+        (("资产", "成本", "运维"), ("query_asset_",)),
+        (("管廊", "隧道"), ("query_tunnel_",)),
+        (("危化", "危险品", "危化品"), ("query_hazmat_",)),
+        (("治理", "主数据"), ("query_governance_",)),
+        (("道路", "塌陷", "空洞", "施工"), ("query_road_",)),
+        (("燃气", "泄漏", "占压"), ("query_gas_",)),
+        (("供水", "水压", "水质", "爆管", "dma"), ("query_water_",)),
+        (("井盖",), ("query_manhole_",)),
+    ]
+    prefixes = set()
+    for keywords, names in groups:
+        if any(keyword in text for keyword in keywords):
+            prefixes.update(names)
+
+    selected = []
+    for schema in tools.TOOL_SCHEMAS:
+        name = schema["function"]["name"]
+        if name == "navigate_to_module" or any(name.startswith(prefix) for prefix in prefixes):
+            selected.append(schema)
+
+    if prefixes:
+        return selected
+
+    # 无明确领域时只提供各模块概览和页面导航，控制本地推理上下文大小。
+    overview_names = {
+        "query_alert_overview",
+        "query_workorder_overview", "query_plan_overview", "query_asset_overview",
+        "query_tunnel_overview", "query_hazmat_overview", "query_governance_overview",
+        "query_gas_asset_summary", "query_road_subsidence_stats",
+        "query_water_monitor_latest", "query_manhole_monitor_stats", "navigate_to_module",
+    }
+    return [s for s in tools.TOOL_SCHEMAS if s["function"]["name"] in overview_names]
+
+
+def _fast_path(message: str) -> Optional[Dict[str, Any]]:
+    """高频精确查询直接访问真实接口，不让用户等待两轮模型推理。"""
     text = message.strip().lower()
+    count_words = ("多少", "数量", "总数", "几条", "几个")
+    if ("预警" in text or "告警" in text) and any(word in text for word in count_words):
+        data = tools.execute("query_alert_overview", {})
+        if not data.get("_error"):
+            count = int(data.get("total", 0))
+            return {
+                "success": True,
+                "answer": f"当前共有 **{count} 条预警**。",
+                "action": None,
+                "tool_results": [{"tool": "query_alert_overview", "args": {}, "data": data}],
+                "model": "local-data-router",
+            }
     if "工单" in text and ("待派单" in text or "未派单" in text):
         data = tools.execute("query_workorder_overview", {})
         if not data.get("_error"):
@@ -28,26 +81,68 @@ def _local_fallback(message: str, error: Exception) -> Optional[Dict[str, Any]]:
                 "answer": f"当前有 **{count} 个待派单工单**。",
                 "action": None,
                 "tool_results": [{"tool": "query_workorder_overview", "args": {}, "data": data}],
-                "model": "local-data-fallback",
-                "warning": "DeepSeek 网络暂时不可用，已使用平台实时数据回答。",
+                "model": "local-data-router",
             }
     return None
 
 
-def run_chat(message: str, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
-    messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+def _local_fallback(message: str, error: Exception) -> Optional[Dict[str, Any]]:
+    """模型异常时，仍尝试用平台真实接口回答高频数据问题。"""
+    result = _fast_path(message)
+    if result:
+        result["model"] = "local-data-fallback"
+        result["warning"] = "大模型暂时不可用，已使用平台实时数据回答。"
+    return result
+
+
+def run_chat(message: str, history: Optional[List[Dict[str, str]]] = None,
+             memory_summary: str = "") -> Dict[str, Any]:
+    fast_result = _fast_path(message)
+    if fast_result:
+        return fast_result
+
+    rag_chunks = rag.retrieve(message)
+    context_parts = []
+    if memory_summary:
+        context_parts.append("较早对话摘要：\n" + memory_summary)
+    if rag_chunks:
+        docs = "\n\n".join("[%s] %s" % (item["source"], item["content"]) for item in rag_chunks)
+        context_parts.append("项目资料检索结果（仅在与问题相关时引用）：\n" + docs)
+    system_content = SYSTEM_PROMPT
+    if context_parts:
+        system_content += "\n\n" + "\n\n".join(context_parts)
+    messages: List[Dict[str, Any]] = [{"role": "system", "content": system_content}]
     if history:
         for h in history[-8:]:
             messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": message})
+    selection_context = " ".join(h.get("content", "") for h in (history or [])[-4:]) + " " + message
+    selected_tools = _select_tool_schemas(selection_context)
 
     tool_results: List[Dict[str, Any]] = []
     action: Optional[Dict[str, Any]] = None
     answer = ""
+    active_model = config.LOCAL_LLM_MODEL if config.ASSISTANT_PROVIDER != "deepseek" else config.DEEPSEEK_MODEL
+    active_provider = config.ASSISTANT_PROVIDER
+    warning = None
 
     try:
         for _ in range(4):
-            msg = llm.chat(messages, tools=tools.TOOL_SCHEMAS, tool_choice="auto")
+            # 小型本地模型拿到工具结果后直接总结，避免重复选工具造成长时间空转。
+            if tool_results and active_provider == "local":
+                available_tools = None
+                compact_results = json.dumps(tool_results, ensure_ascii=False)[:6000]
+                request_messages = [
+                    {"role": "system", "content": "根据给定的真实查询结果，用简洁中文回答用户问题。不得编造数据，不要描述工具调用过程。"},
+                    {"role": "user", "content": "用户问题：%s\n真实查询结果：%s" % (message, compact_results)},
+                ]
+            else:
+                available_tools = selected_tools
+                request_messages = messages
+            msg = llm.chat(request_messages, tools=available_tools, tool_choice="auto")
+            active_model = msg.pop("_assistant_model", active_model)
+            active_provider = msg.pop("_assistant_provider", active_provider)
+            warning = msg.pop("_assistant_warning", warning)
             tool_calls = msg.get("tool_calls")
             if not tool_calls:
                 answer = msg.get("content") or ""
@@ -87,7 +182,11 @@ def run_chat(message: str, history: Optional[List[Dict[str, str]]] = None) -> Di
             return fallback
         return {"success": False, "error": str(exc), "answer": "",
                 "action": None, "tool_results": tool_results,
-                "model": config.DEEPSEEK_MODEL}
+                "model": active_model}
 
-    return {"success": True, "answer": answer, "action": action,
-            "tool_results": tool_results, "model": config.DEEPSEEK_MODEL}
+    result = {"success": True, "answer": answer, "action": action,
+              "tool_results": tool_results, "model": active_model,
+              "rag_sources": sorted({item["source"] for item in rag_chunks})}
+    if warning:
+        result["warning"] = warning
+    return result

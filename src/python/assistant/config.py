@@ -35,11 +35,22 @@ _load_env_file(os.path.join(_REPO_ROOT, ".env"))
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat").strip()
+
+# 智能助手模型提供方：local（仅 Ollama）、deepseek（仅云端）、auto（本地优先，失败后回退）
+ASSISTANT_PROVIDER = os.environ.get("ASSISTANT_PROVIDER", "auto").strip().lower()
+if ASSISTANT_PROVIDER not in {"local", "deepseek", "auto"}:
+    ASSISTANT_PROVIDER = "auto"
+LOCAL_LLM_BASE_URL = os.environ.get(
+    "LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1"
+).rstrip("/")
+LOCAL_LLM_MODEL = os.environ.get("LOCAL_LLM_MODEL", "qwen3.5:4b").strip()
+LOCAL_LLM_API_KEY = os.environ.get("LOCAL_LLM_API_KEY", "ollama").strip() or "ollama"
 # 助手执行工具时回调本服务接口的基址（自调用）
 INTERNAL_BASE = os.environ.get("ASSISTANT_INTERNAL_BASE", "http://127.0.0.1:8000").rstrip("/")
 
 # 队友独立服务基址（各模块独立部署在不同端口，路径含 /api 前缀）
 TEAMMATE_SERVICES = {
+    "alert_warning": os.environ.get("ALERT_WARNING_BASE", "http://127.0.0.1:8085/api").rstrip("/"),
     "gas_asset":  os.environ.get("TEAMMATE_GAS_ASSET_BASE",  "http://127.0.0.1:8001/api").rstrip("/"),
     "road_hazard": os.environ.get("TEAMMATE_ROAD_HAZARD_BASE", "http://127.0.0.1:8002/api").rstrip("/"),
     "gas_risk":   os.environ.get("TEAMMATE_GAS_RISK_BASE",   "http://127.0.0.1:8003/api").rstrip("/"),
@@ -50,3 +61,8 @@ TEAMMATE_SERVICES = {
 
 def has_key() -> bool:
     return bool(DEEPSEEK_API_KEY)
+
+
+def configured() -> bool:
+    """当前模式是否具备基本配置；本地模式不需要真实 API Key。"""
+    return ASSISTANT_PROVIDER in {"local", "auto"} or has_key()

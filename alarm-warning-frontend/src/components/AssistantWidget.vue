@@ -14,17 +14,25 @@
           <span class="ai-head__avatar"><el-icon :size="18"><MagicStick /></el-icon></span>
           <div>
             <div class="ai-head__title">平台智能助手</div>
-            <div class="ai-head__sub">DeepSeek 大模型 · 自然语言查数据 / 跳模块</div>
+            <div class="ai-head__sub">本地 Agent · 连续对话 / 项目知识 / 业务数据</div>
           </div>
         </div>
-        <button class="ai-head__close" type="button" aria-label="关闭" @click="open = false">
-          <el-icon :size="18"><Close /></el-icon>
-        </button>
+        <div class="ai-head__actions">
+          <button class="ai-head__icon" type="button" title="新建对话" aria-label="新建对话" @click="startNewConversation">
+            <el-icon :size="17"><Plus /></el-icon>
+          </button>
+          <button class="ai-head__icon" type="button" title="清空当前记忆" aria-label="清空当前记忆" @click="clearMemory">
+            <el-icon :size="16"><Delete /></el-icon>
+          </button>
+          <button class="ai-head__close" type="button" aria-label="关闭" @click="open = false">
+            <el-icon :size="18"><Close /></el-icon>
+          </button>
+        </div>
       </header>
 
       <div ref="bodyRef" class="ai-body">
         <!-- 欢迎屏 + 快捷提问 -->
-        <div v-if="messages.length === 0" class="ai-welcome">
+        <div v-if="!hasInteracted && messages.length === 0" class="ai-welcome">
           <div class="ai-welcome__hi">你好，我是安塞城市生命线平台的智能助手 👋</div>
           <p class="ai-welcome__tip">可以用大白话问我平台里的真实数据，或让我带你跳转到某个模块。试试：</p>
           <div class="ai-chips">
@@ -78,6 +86,14 @@
           </div>
         </div>
 
+        <!-- 每轮回答完成后保留快捷问题，方便用户连续点击提问 -->
+        <div v-if="showFollowupSuggestions" class="ai-followups">
+          <p class="ai-followups__tip">你还可以继续问：</p>
+          <div class="ai-chips">
+            <button v-for="s in suggestions" :key="s" class="ai-chip" type="button" @click="send(s)">{{ s }}</button>
+          </div>
+        </div>
+
         <!-- 思考中 -->
         <div v-if="loading" class="ai-msg ai-msg--assistant">
           <div class="ai-bubble ai-typing"><span></span><span></span><span></span></div>
@@ -102,20 +118,40 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ChatDotRound, Close, Right, MagicStick, WarningFilled,
-  DataLine, ArrowDown, Promotion
+  DataLine, ArrowDown, Promotion, Plus, Delete
 } from '@element-plus/icons-vue'
-import { sendChat } from '@/api/assistant'
+import { clearConversationMemory, createConversation, getConversation, sendChat } from '@/api/assistant'
 
 const router = useRouter()
 const open = ref(false)
 const draft = ref('')
 const loading = ref(false)
-const messages = ref([])   // {role, content, action?, blocks?, error?, showData?}
+const STORAGE_MESSAGES = 'assistant_current_messages_v2'
+const STORAGE_CONVERSATION = 'assistant_conversation_id_v2'
+const STORAGE_INTERACTED = 'assistant_has_interacted_v2'
+
+function storedMessages() {
+  try { return JSON.parse(sessionStorage.getItem(STORAGE_MESSAGES) || '[]') } catch { return [] }
+}
+function freshConversationId() {
+  return globalThis.crypto?.randomUUID?.() || `chat_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+const messages = ref(storedMessages())   // {role, content, action?, blocks?, error?, showData?}
+const conversationId = ref(sessionStorage.getItem(STORAGE_CONVERSATION) || freshConversationId())
+// 独立记录是否已经提问，避免请求期间或会话恢复时欢迎推荐区再次闪现。
+const hasInteracted = ref(sessionStorage.getItem(STORAGE_INTERACTED) === '1' || messages.value.length > 0)
 const bodyRef = ref(null)
+
+sessionStorage.setItem(STORAGE_CONVERSATION, conversationId.value)
+watch(messages, (value) => sessionStorage.setItem(STORAGE_MESSAGES, JSON.stringify(value)), { deep: true })
+watch(conversationId, (value) => sessionStorage.setItem(STORAGE_CONVERSATION, value))
+watch(hasInteracted, (value) => sessionStorage.setItem(STORAGE_INTERACTED, value ? '1' : '0'))
 
 const suggestions = [
   '现在有多少待派单的工单？',
@@ -123,6 +159,11 @@ const suggestions = [
   '应急预案一共几份、启用的有几份？',
   '打开综合管廊模块',
 ]
+
+const showFollowupSuggestions = computed(() => {
+  if (loading.value || messages.value.length === 0) return false
+  return messages.value[messages.value.length - 1]?.role === 'assistant'
+})
 
 // 常见字段中文标签（提升原始数据可读性，未命中则用原键）
 const FIELD_LABELS = {
@@ -233,22 +274,20 @@ function scroll() {
   nextTick(() => { if (bodyRef.value) bodyRef.value.scrollTop = bodyRef.value.scrollHeight })
 }
 
-function ctxHistory() {
-  return messages.value
-    .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content)
-    .slice(-8)
-    .map((m) => ({ role: m.role, content: m.content }))
-}
-
 async function send(text) {
   const q = (text ?? draft.value).trim()
   if (!q || loading.value) return
+  hasInteracted.value = true
   draft.value = ''
   messages.value.push({ role: 'user', content: q })
   loading.value = true
   scroll()
   try {
-    const res = await sendChat(q, ctxHistory())
+    // 当前问题只发送一次；历史上下文由 conversation_id 对应的后端会话负责加载。
+    const res = await sendChat(q, conversationId.value)
+    if (res?.conversation_id && res.conversation_id !== conversationId.value) {
+      conversationId.value = res.conversation_id
+    }
     if (res && res.success) {
       messages.value.push({
         role: 'assistant',
@@ -267,6 +306,48 @@ async function send(text) {
     scroll()
   }
 }
+
+async function startNewConversation() {
+  if (loading.value) return
+  try {
+    const result = await createConversation()
+    conversationId.value = result.conversation_id || freshConversationId()
+  } catch {
+    conversationId.value = freshConversationId()
+  }
+  messages.value = []
+  hasInteracted.value = false
+  draft.value = ''
+  ElMessage.success('已新建对话')
+}
+
+async function clearMemory() {
+  if (loading.value || messages.value.length === 0) return
+  try {
+    await ElMessageBox.confirm('将清空当前对话及后端上下文记忆，是否继续？', '清空记忆', {
+      confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning'
+    })
+    await clearConversationMemory(conversationId.value)
+    messages.value = []
+    hasInteracted.value = false
+    draft.value = ''
+    ElMessage.success('当前对话记忆已清空')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error('清空记忆失败')
+  }
+}
+
+onMounted(async () => {
+  // sessionStorage 被清理但会话 ID 仍在时，从后端恢复纯文本上下文。
+  if (messages.value.length) return
+  try {
+    const saved = await getConversation(conversationId.value)
+    if (Array.isArray(saved?.messages)) {
+      messages.value = saved.messages.filter((m) => m.content)
+      if (messages.value.length) hasInteracted.value = true
+    }
+  } catch { /* 首次会话由第一次提问自动创建 */ }
+})
 
 function go(action) {
   if (action && action.path) {
@@ -337,11 +418,14 @@ function go(action) {
 }
 .ai-head__title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 .ai-head__sub { font-size: 11px; opacity: 0.85; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ai-head__actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.ai-head__icon,
 .ai-head__close {
   flex-shrink: 0; width: 30px; height: 30px; border: none; border-radius: 8px;
   background-color: rgba(255, 255, 255, 0.18); color: #fff; cursor: pointer;
   display: flex; align-items: center; justify-content: center; transition: background-color 0.2s;
 }
+.ai-head__icon:hover,
 .ai-head__close:hover { background-color: rgba(255, 255, 255, 0.3); }
 
 /* ===== 消息区 ===== */
@@ -357,6 +441,15 @@ function go(action) {
   background-color: var(--app-primary-soft); transition: all 0.18s ease; text-align: left;
 }
 .ai-chip:hover { background-color: var(--app-primary); color: #fff; border-color: var(--app-primary); }
+.ai-followups {
+  margin: 4px 0 2px;
+  padding: 8px 6px;
+}
+.ai-followups__tip {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--app-text-3);
+}
 
 .ai-msg { display: flex; }
 .ai-msg--user { justify-content: flex-end; }

@@ -36,7 +36,8 @@ try:
 except ImportError:  # 启动时给出明确错误，不让验证码静默退化为不安全的前端校验
     redis = None
 
-CODE_TTL = int(os.environ.get("VERIFICATION_CODE_TTL", "300"))
+# 验证码至少保留 5 分钟；即使演示电脑残留了更短的环境变量也不会提前过期。
+CODE_TTL = max(300, int(os.environ.get("VERIFICATION_CODE_TTL", "300")))
 TOKEN_TTL = int(os.environ.get("VERIFICATION_TOKEN_TTL", "600"))
 SEND_COOLDOWN = int(os.environ.get("VERIFICATION_SEND_COOLDOWN", "60"))
 HOURLY_LIMIT = int(os.environ.get("VERIFICATION_HOURLY_LIMIT", "5"))

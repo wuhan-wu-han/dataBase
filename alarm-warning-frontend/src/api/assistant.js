@@ -11,8 +11,20 @@ const http = createModuleHttp(MODULE_PREFIX.platform, { silentErrors: true, time
  * @param {Array<{role:string,content:string}>} history 最近若干轮上下文
  * @returns {Promise<{success:boolean,answer:string,action:object|null,tool_results:Array,model:string,error?:string}>}
  */
-export function sendChat(message, history = []) {
-  return http.post('/assistant/chat', { message, history })
+export function sendChat(message, conversationId, history = []) {
+  return http.post('/assistant/chat', { message, conversation_id: conversationId, history })
+}
+
+export function createConversation() {
+  return http.post('/assistant/conversations')
+}
+
+export function getConversation(conversationId) {
+  return http.get(`/assistant/conversations/${conversationId}`)
+}
+
+export function clearConversationMemory(conversationId) {
+  return http.delete(`/assistant/conversations/${conversationId}/memory`)
 }
 
 /** 助手配置状态（是否已配置大模型密钥） */

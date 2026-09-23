@@ -12,6 +12,12 @@ export default defineConfig({
     // 开发环境统一通过 api-gateway:8080 转发到各子服务
     // 生产环境由 Nginx 反向代理实现，前端使用相对路径 /api/...
     proxy: {
+      // 百度 JS SDK 通过同源开发代理加载，规避演示电脑的证书吊销检查和浏览器外链拦截。
+      '/bmap-sdk': {
+        target: 'https://api.map.baidu.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/bmap-sdk/, '')
+      },
       // 认证路由由 Python 综合服务(:8000)提供；容器部署时由 Nginx 转发至 platform-api:8000
       '/auth': {
         target: process.env.VITE_AUTH_TARGET || 'http://127.0.0.1:8000',

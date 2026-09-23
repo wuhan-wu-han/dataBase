@@ -506,6 +506,7 @@ let networkNodes = []         // 网络节点覆盖物
 let highlightOverlay = null   // 当前选中高亮覆盖物
 let selectedOverlay = null    // 选中描边覆盖物
 let impactCircleOverlay = null // 当前告警影响范围
+let lastOverlayClickAt = 0    // 防止 Marker 点击后紧接着冒泡到地图并清空选中态
 
 // ---------------------------------------------------------------------------
 // 视野控制：默认聚焦安塞区检测区域
@@ -590,12 +591,17 @@ function fitToAnsei(maxZoom = 14) {
 function refreshMapAfterActivate() {
   if (!map || !mapEl.value) return
   nextTick(() => {
-    setTimeout(() => {
-      // BMap v3.0 没有 invalidateSize()，用 DOM 重置 + 重新设置 center/zoom 触发重绘
-      try { map.checkResize?.() } catch { /* noop */ }
-      // 用 setViewport 再次聚焦（同时刷新容器尺寸）
-      fitToAnsei(14)
-    }, 120)
+    // 容器布局、侧栏和字体会分阶段稳定；多次重绘能补齐首次请求遗漏的地图瓦片。
+    for (const delay of [80, 320, 900]) {
+      setTimeout(() => {
+        if (!map || !mapEl.value) return
+        try { map.checkResize?.() } catch { /* noop */ }
+        const center = map.getCenter()
+        const zoom = map.getZoom()
+        map.centerAndZoom(center, zoom)
+        if (delay === 320) fitToAnsei(14)
+      }, delay)
+    }
   })
 }
 
@@ -922,6 +928,7 @@ async function createMap() {
 
   // 点击事件：清空导航/高亮
   map.addEventListener('click', (e) => {
+    if (Date.now() - lastOverlayClickAt < 160) return
     if (navMode.value && !navStartPoint.value) {
       navStartPoint.value = e.point
       navStart.value = `起点: ${e.point.lng.toFixed(5)}, ${e.point.lat.toFixed(5)}`
@@ -1196,7 +1203,10 @@ function buildPoint(cfg, feature, bdLon, bdLat) {
   const marker = new BMap.Marker(bdPoint, { icon })
   marker.setTitle(feature.properties._title || '')
 
-  marker.addEventListener('click', () => {
+  marker.addEventListener('click', (event) => {
+    lastOverlayClickAt = Date.now()
+    try { event?.domEvent?.stopPropagation?.() } catch { /* noop */ }
+    if (event?.domEvent) event.domEvent.cancelBubble = true
     selectFeature(cfg, feature, marker, [bdLon, bdLat])
   })
 
@@ -1598,7 +1608,8 @@ function selectFeature(cfg, feature, overlay, coords) {
       strokeOpacity: 0.72,
       fillColor: '#315B78',
       fillOpacity: 0.06,
-      enableEditing: false
+      enableEditing: false,
+      enableClicking: false
     })
     map.addOverlay(selectedOverlay)
     openFeatureInfoWindow(cfg, feature, pointCoords)
@@ -1815,7 +1826,8 @@ async function reload() {
     if (firstEntry) {
       firstEntry = false
       await nextTick()
-      setTimeout(() => fitToAnsei(15), 200)
+      setTimeout(() => fitToAnsei(15), 160)
+      setTimeout(() => refreshMapAfterActivate(), 420)
     }
   } catch (err) {
     console.error('[GIS] 数据加载失败:', err)

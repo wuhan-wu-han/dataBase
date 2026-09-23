@@ -48,7 +48,7 @@ def _get(path, params=None):
     """回调本服务接口（自调用）。失败不抛异常，返回 {_error:...} 让模型如实转述。"""
     url = config.INTERNAL_BASE + path
     try:
-        with httpx.Client(timeout=20.0) as client:
+        with httpx.Client(timeout=20.0, trust_env=False) as client:
             r = client.get(url, params=_clean(params))
         if r.status_code != 200:
             return {"_error": "接口 %s 返回 HTTP %d" % (path, r.status_code)}
@@ -64,13 +64,23 @@ def _get_teammate(service, path, params=None):
         return {"_error": "未配置服务：%s" % service}
     url = base + path
     try:
-        with httpx.Client(timeout=20.0) as client:
+        with httpx.Client(timeout=20.0, trust_env=False) as client:
             r = client.get(url, params=_clean(params))
         if r.status_code != 200:
             return {"_error": "接口 %s%s 返回 HTTP %d" % (service, path, r.status_code)}
         return r.json()
     except httpx.HTTPError as exc:
         return {"_error": "调用 %s%s 失败：%s（%s 服务是否已启动？）" % (service, path, exc, service)}
+
+
+def h_alert_overview(a):
+    """查询预警中心总数；直接访问预警服务，避免网关鉴权和模型二次推理。"""
+    result = _get_teammate("alert_warning", "/alerts", {"page": 1, "size": 1})
+    if result.get("_error"):
+        return result
+    # Java 服务统一响应为 {code, data, message}，这里解包成稳定的助手工具契约。
+    data = result.get("data", result)
+    return {"total": int(data.get("total", 0))}
 
 
 # ==================== 工具执行器 ====================
@@ -305,6 +315,8 @@ def h_navigate(a):
 
 # 工具名 → 执行器
 HANDLERS = {
+    # 预警中心（:8085）
+    "query_alert_overview": h_alert_overview,
     # 自有模块（:8000）
     "query_workorder_overview": h_workorder_overview,
     "query_workorders": h_workorders,
@@ -387,6 +399,8 @@ _STR = {"type": "string"}
 _INT = {"type": "integer"}
 
 TOOL_SCHEMAS = [
+    _fn("query_alert_overview",
+        "查询【AI预警中心】当前预警总数。用户问当前有多少预警/告警、预警总数时用。"),
     _fn("query_workorder_overview",
         "查询【工单管理】总览KPI：总工单数、待派单、超期、平均评分、空闲人员等。用户问工单整体情况/有多少工单时用。"),
     _fn("query_workorders",

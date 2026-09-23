@@ -54,14 +54,6 @@
         </div>
       </header>
 
-      <!-- Mock 提示条：任一模块接口未连通时显示；综合态势页是对外演示主页面，不展示联调提示 -->
-      <div v-if="hasMockData && !isDemoShowcasePage" class="layout__mockbar">
-        <el-icon :size="15"><WarningFilled /></el-icon>
-        <span class="layout__mockbar-label">当前使用演示数据（Mock）</span>
-        <span class="layout__mockbar-modules">{{ mockLabels }}</span>
-        <span class="layout__mockbar-hint">该模块接口未连通，数据非真实后端数据</span>
-      </div>
-
       <!-- 内容区：Vue Transition 淡入淡出 300ms -->
       <div class="layout__content">
         <router-view v-slot="{ Component }">
@@ -88,10 +80,9 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Clock, Monitor, WarningFilled, Menu } from '@element-plus/icons-vue'
+import { Clock, Monitor, Menu } from '@element-plus/icons-vue'
 import Sidebar from './Sidebar.vue'
 import AssistantWidget from './AssistantWidget.vue'
-import { hasMockData, mockModules } from '@/utils/mockMode'
 import { authState, can, clearSession } from '@/stores/auth'
 import { changePassword } from '@/api/auth'
 
@@ -117,11 +108,6 @@ async function submitPassword() {
  * 由页面自身接管内部滚动，地图得以铺满顶栏以下的全部区域。
  */
 const isFlush = computed(() => !!route.meta?.fullBleed)
-
-const mockLabels = computed(() => mockModules.value.map((m) => m.label).join('、'))
-
-/** 综合态势页是对外演示主画面，联调期的 Mock 提示条不在该页展示。 */
-const isDemoShowcasePage = computed(() => route.name === 'GISSituation')
 
 // 折叠状态持久化 key
 const STORAGE_KEY = 'app_sidebar_collapsed'
@@ -320,45 +306,6 @@ onUnmounted(() => {
 .topbar-avatar:hover {
   transform: scale(1.05);
   box-shadow: 0 4px 14px rgba(0, 113, 227, 0.35);
-}
-
-/* Mock 提示条 */
-.layout__mockbar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 32px;
-  font-size: 13px;
-  color: #8A5A00;
-  background-color: rgba(255, 149, 0, 0.12);
-  border-bottom: 1px solid rgba(255, 149, 0, 0.24);
-}
-.layout__mockbar :deep(.el-icon) {
-  color: var(--app-color-orange);
-  flex-shrink: 0;
-}
-.layout__mockbar-label {
-  font-weight: 600;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-.layout__mockbar-modules {
-  padding: 1px 8px;
-  border-radius: var(--app-radius-tag);
-  background-color: rgba(255, 149, 0, 0.18);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.layout__mockbar-hint {
-  color: var(--app-text-4);
-  font-size: 12px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* 内容区 */
